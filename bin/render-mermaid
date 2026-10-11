@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+. "$(dirname "$(readlink -f "$0")")/../lib/viz-publish.sh"
+viz_parse_args "$@"
+
+MMDC=${LEARN_MMDC:-$(command -v mmdc || true)}
+[ -z "$MMDC" ] && [ -x "$HOME/.nix-profile/bin/mmdc" ] && MMDC=$HOME/.nix-profile/bin/mmdc
+[ -z "$MMDC" ] && { echo "mmdc not found. Install: nix profile install nixpkgs#mermaid-cli" >&2; exit 2; }
+
+render_png() {
+  local cfg
+  cfg=$(dirname "$1")/puppeteer.json
+  # Chromium's own sandbox cannot start inside the Claude Code bash sandbox.
+  echo '{"args":["--no-sandbox","--disable-gpu"]}' > "$cfg"
+  "$MMDC" -q -i "$SRC" -o "$1" -b white -s 2 -p "$cfg"
+}
+
+viz_main
