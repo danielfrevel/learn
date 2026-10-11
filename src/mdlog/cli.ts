@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { questionBlock, renderEvents } from "./render.ts";
+import { isQuestionTool, questionBlock, renderEvents } from "./render.ts";
 import { deleteState, readState, writeState, type LogState } from "./state.ts";
 import { parseTranscript, transcriptPathFor } from "./transcript.ts";
 
@@ -37,6 +37,21 @@ function append(state: LogState, blocks: string[]): void {
   appendFileSync(state.logFile, prefix + blocks.join("\n\n") + "\n");
 }
 
+const WAIT_STEP_MS = 100;
+const WAIT_MAX_MS = 1500;
+
+// Claude Code writes the transcript a moment after the PreToolUse hook fires.
+// Waiting briefly for the tool_use entry keeps the assistant text ahead of the question.
+function readTranscript(state: LogState, awaitToolUseId?: string) {
+  let parsed = parseTranscript(readFileSync(state.transcript), state.cursor);
+  const seen = () => parsed.events.some((e) => e.kind === "tool_use" && e.id === awaitToolUseId);
+  for (let waited = 0; awaitToolUseId && !seen() && waited < WAIT_MAX_MS; waited += WAIT_STEP_MS) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, WAIT_STEP_MS);
+    parsed = parseTranscript(readFileSync(state.transcript), state.cursor);
+  }
+  return parsed;
+}
+
 function sync(sessionId: string, payload: HookPayload): void {
   const state = readState(sessionId);
   if (!state) return;
@@ -44,7 +59,8 @@ function sync(sessionId: string, payload: HookPayload): void {
   const rendered = new Set(state.rendered);
   const blocks: string[] = [];
   if (existsSync(state.transcript)) {
-    const parsed = parseTranscript(readFileSync(state.transcript), state.cursor);
+    const awaitId = payload.hook_event_name === "PreToolUse" && payload.tool_name && isQuestionTool(payload.tool_name) ? payload.tool_use_id : undefined;
+    const parsed = readTranscript(state, awaitId);
     blocks.push(...renderEvents(parsed.events, rendered));
     state.cursor = parsed.cursor;
   }

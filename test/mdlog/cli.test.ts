@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { copyFileSync, mkdtempSync, readFileSync, appendFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -56,6 +56,27 @@ test("PreToolUse renders the question from tool_input before the transcript has 
   appendFileSync(transcript, JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_9", name: "mcp__plugin_learn_quiz__quiz", input: payload.tool_input }] } }) + "\n");
   run(["sync"], JSON.stringify({ session_id: "s2", transcript_path: transcript, hook_event_name: "Stop" }), env);
   assert.equal(readFileSync(log, "utf8").split("> [!question] Quiz").length, 2);
+});
+
+test("PreToolUse waits for a lagging transcript and keeps the assistant text before the question", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "learn-cli-"));
+  const transcript = join(dir, "s3.jsonl");
+  appendFileSync(transcript, "");
+  const log = join(dir, "lesson.md");
+  const env = { XDG_STATE_HOME: join(dir, "state"), LEARN_TRANSCRIPT: transcript };
+  run(["link", log, "--session", "s3"], "", env);
+  const input = { question: "Q?", options: [{ label: "a" }, { label: "b" }], correctAnswer: "a", explanation: "secret", shuffle: false };
+  const payload = { session_id: "s3", transcript_path: transcript, hook_event_name: "PreToolUse", tool_name: "mcp__plugin_learn_quiz__quiz", tool_use_id: "toolu_7", tool_input: input };
+  const child = execFile(process.execPath, [CLI, "sync"], { env: { ...process.env, ...env } });
+  const exited = new Promise((r) => child.on("exit", r));
+  child.stdin!.end(JSON.stringify(payload));
+  await new Promise((r) => setTimeout(r, 400));
+  appendFileSync(transcript, JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Vorher" }, { type: "tool_use", id: "toolu_7", name: "mcp__plugin_learn_quiz__quiz", input }] } }) + "\n");
+  await exited;
+  const text = readFileSync(log, "utf8");
+  assert.ok(text.includes("Vorher"), text);
+  assert.ok(text.indexOf("Vorher") < text.indexOf("> [!question] Quiz"), text);
+  assert.equal(text.split("> [!question] Quiz").length, 2);
 });
 
 test("sync without a linked log exits 0 and writes nothing", () => {
