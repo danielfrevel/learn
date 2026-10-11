@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseTranscript } from "../../src/mdlog/transcript.ts";
 import { questionBlock, renderEvents } from "../../src/mdlog/render.ts";
+import { encodeResult } from "../../src/quiz/result.ts";
 
 const FIXTURE = fileURLToPath(new URL("../fixtures/transcript.jsonl", import.meta.url));
 const { events } = parseTranscript(readFileSync(FIXTURE), 0);
@@ -18,7 +19,7 @@ test("renders the fixture in order", () => {
     ">",
     "> 1. 0",
     "> 2. 1",
-    "> 0. Ich weiß es nicht",
+    "> Ich weiß es nicht",
   ].join("\n"));
   assert.equal(blocks[3], "> [!success] ✓ Richtig: 1. 0\n> Erklärung: Geheim");
   assert.equal(blocks[4], [
@@ -48,13 +49,16 @@ test("questionBlock from raw quiz tool_input uses the deterministic display orde
   const block = questionBlock("mcp__plugin_learn_quiz__quiz", input)!;
   const again = questionBlock("mcp__plugin_learn_quiz__quiz", input)!;
   assert.equal(block, again);
-  assert.match(block, /> 1\. [abc]\n> 2\. [abc]\n> 3\. [abc]\n> 0\. Ich weiß es nicht$/);
+  assert.match(block, /> 1\. [abc]\n> 2\. [abc]\n> 3\. [abc]\n> Ich weiß es nicht$/);
 });
 
 test("wrong and dontKnow results use failure and info callouts", () => {
-  const wrong = renderEvents([{ kind: "tool_result", toolUseId: "t", text: '✗\n<!--learn-quiz {"status":"answered","question":"q","mode":"single-select","options":[{"index":1,"label":"A","value":"a"},{"index":2,"label":"B","value":"b"}],"answers":[{"index":2,"label":"B","value":"b"}],"correctIndices":[1],"correct":false,"explanation":"e"}-->', toolUseResult: undefined }], new Set());
+  const options = [{ index: 1, label: "A", value: "a" }, { index: 2, label: "B", value: "b" }];
+  const wrongText = "✗\n" + encodeResult({ outcome: "wrong", question: "q", mode: "single-select", options, answers: [options[1]], correctIndices: [1], explanation: "e" });
+  const wrong = renderEvents([{ kind: "tool_result", toolUseId: "t", text: wrongText, toolUseResult: undefined }], new Set());
   assert.equal(wrong[0], "> [!failure] ✗ Falsch: 2. B\n> Richtig wäre: 1. A\n> Erklärung: e");
-  const dk = renderEvents([{ kind: "tool_result", toolUseId: "t", text: '<!--learn-quiz {"status":"answered","question":"q","mode":"single-select","options":[{"index":1,"label":"A","value":"a"}],"answers":[],"correctIndices":[1],"dontKnow":true,"explanation":"e","note":"n"}-->', toolUseResult: undefined }], new Set());
+  const dkText = encodeResult({ outcome: "dontKnow", question: "q", mode: "single-select", options, answers: [], correctIndices: [1], explanation: "e", note: "n" });
+  const dk = renderEvents([{ kind: "tool_result", toolUseId: "t", text: dkText, toolUseResult: undefined }], new Set());
   assert.equal(dk[0], "> [!info] Weiß nicht.\n> Richtig wäre: 1. A\n> Erklärung: e\n> Notiz: n");
 });
 

@@ -1,8 +1,9 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { isQuestionTool, questionBlock, renderEvents } from "./render.ts";
+import { parseArgs } from "node:util";
+import { questionBlock, renderEvents } from "./render.ts";
 import { deleteState, readState, writeState, type LogState } from "./state.ts";
-import { parseTranscript, transcriptPathFor, type Event } from "./transcript.ts";
+import { readNewEntries, transcriptPathFor, type Event } from "./transcript.ts";
 
 interface HookPayload {
   session_id?: string;
@@ -25,41 +26,39 @@ function readPayload(): HookPayload {
   }
 }
 
-function flag(args: string[], name: string): string | undefined {
-  const i = args.indexOf(name);
-  return i >= 0 ? args[i + 1] : undefined;
-}
-
-function append(state: LogState, blocks: string[]): void {
+const append = (state: LogState, blocks: string[]) => {
   if (blocks.length === 0) return;
   mkdirSync(dirname(state.logFile), { recursive: true });
-  const existing = existsSync(state.logFile) ? readFileSync(state.logFile, "utf8") : "";
-  const prefix = existing.length === 0 || existing.endsWith("\n\n") ? "" : existing.endsWith("\n") ? "\n" : "\n\n";
-  appendFileSync(state.logFile, prefix + blocks.join("\n\n") + "\n");
-}
+  appendFileSync(state.logFile, blocks.map((b) => b + "\n\n").join(""));
+};
 
 const WAIT_STEP_MS = 100;
 const WAIT_MAX_MS = 1500;
+const sleeper = new Int32Array(new SharedArrayBuffer(4));
 
 // Claude Code writes the transcript a moment after a hook fires. Waiting briefly for the
 // entry the hook announces keeps the log complete and in order.
 function readTranscript(state: LogState, arrived?: (events: Event[]) => boolean) {
-  let parsed = parseTranscript(readFileSync(state.transcript), state.cursor);
-  for (let waited = 0; arrived && !arrived(parsed.events) && waited < WAIT_MAX_MS; waited += WAIT_STEP_MS) {
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, WAIT_STEP_MS);
-    parsed = parseTranscript(readFileSync(state.transcript), state.cursor);
+  const events: Event[] = [];
+  let cursor = state.cursor;
+  for (let waited = 0; ; waited += WAIT_STEP_MS) {
+    const fresh = readNewEntries(state.transcript, cursor);
+    events.push(...fresh.events);
+    cursor = fresh.cursor;
+    if (!arrived || arrived(events) || waited >= WAIT_MAX_MS) return { events, cursor };
+    Atomics.wait(sleeper, 0, 0, WAIT_STEP_MS);
   }
-  return parsed;
 }
 
 function expectedEntry(payload: HookPayload): ((events: Event[]) => boolean) | undefined {
-  if (payload.hook_event_name === "PreToolUse" && payload.tool_name && isQuestionTool(payload.tool_name) && payload.tool_use_id) {
+  if (payload.hook_event_name === "PreToolUse" && payload.tool_use_id) {
     const id = payload.tool_use_id;
     return (events) => events.some((e) => e.kind === "tool_use" && e.id === id);
   }
-  if (payload.hook_event_name === "Stop" && payload.last_assistant_message?.trim()) {
-    const last = payload.last_assistant_message.trim();
-    return (events) => events.some((e) => e.kind === "assistant_text" && e.text.trim() === last);
+  const last = payload.last_assistant_message?.trim();
+  if (payload.hook_event_name === "Stop" && last) {
+    const tail = last.slice(-80);
+    return (events) => events.some((e) => e.kind === "assistant_text" && e.text.trim().endsWith(tail));
   }
   return undefined;
 }
@@ -67,14 +66,12 @@ function expectedEntry(payload: HookPayload): ((events: Event[]) => boolean) | u
 function sync(sessionId: string, payload: HookPayload): void {
   const state = readState(sessionId);
   if (!state) return;
+  const before = JSON.stringify(state);
   if (payload.transcript_path) state.transcript = payload.transcript_path;
   const rendered = new Set(state.rendered);
-  const blocks: string[] = [];
-  if (existsSync(state.transcript)) {
-    const parsed = readTranscript(state, expectedEntry(payload));
-    blocks.push(...renderEvents(parsed.events, rendered));
-    state.cursor = parsed.cursor;
-  }
+  const parsed = readTranscript(state, expectedEntry(payload));
+  const blocks = renderEvents(parsed.events, rendered);
+  state.cursor = parsed.cursor;
   if (payload.hook_event_name === "PreToolUse" && payload.tool_name && payload.tool_use_id && !rendered.has(payload.tool_use_id)) {
     const q = questionBlock(payload.tool_name, payload.tool_input);
     if (q) {
@@ -84,19 +81,22 @@ function sync(sessionId: string, payload: HookPayload): void {
   }
   append(state, blocks);
   state.rendered = [...rendered];
-  writeState(sessionId, state);
+  if (JSON.stringify(state) !== before) writeState(sessionId, state);
 }
 
 function main(): void {
-  const [cmd, ...args] = process.argv.slice(2);
+  const { values, positionals } = parseArgs({
+    args: process.argv.slice(2),
+    options: { session: { type: "string" }, cwd: { type: "string" } },
+    allowPositionals: true,
+  });
+  const [cmd, target] = positionals;
   const payload = readPayload();
-  const sessionId = flag(args, "--session") ?? payload.session_id ?? process.env.CLAUDE_CODE_SESSION_ID;
+  const sessionId = values.session ?? payload.session_id ?? process.env.CLAUDE_CODE_SESSION_ID;
   if (!sessionId) throw new Error("no session id: pass --session or run from a hook");
-  const cwd = flag(args, "--cwd") ?? payload.cwd ?? process.cwd();
+  const cwd = values.cwd ?? payload.cwd ?? process.cwd();
   switch (cmd) {
     case "link": {
-      const flagValues = new Set([flag(args, "--session"), flag(args, "--cwd")]);
-      const target = args.find((a) => !a.startsWith("--") && !flagValues.has(a));
       if (!target) throw new Error("usage: link <file>");
       const logFile = resolve(cwd, target);
       mkdirSync(dirname(logFile), { recursive: true });

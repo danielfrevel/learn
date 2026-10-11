@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { decodeResult, encodeResult, formatResultText, type QuizResult } from "../../src/quiz/result.ts";
 
 const base: QuizResult = {
-  status: "answered", question: "q", mode: "single-select",
+  outcome: "wrong", question: "q", mode: "single-select",
   options: [{ index: 1, label: "A", value: "a" }, { index: 2, label: "B", value: "b" }],
-  answers: [{ index: 2, label: "B", value: "b" }], correctIndices: [1], correct: false, explanation: "weil",
+  answers: [{ index: 2, label: "B", value: "b" }], correctIndices: [1], explanation: "weil",
 };
 
 test("formats wrong answer", () => {
@@ -13,17 +13,17 @@ test("formats wrong answer", () => {
 });
 
 test("formats right answer with note", () => {
-  const r = { ...base, answers: [{ index: 1, label: "A", value: "a" }], correct: true, note: "hm" };
+  const r: QuizResult = { ...base, outcome: "correct", answers: [{ index: 1, label: "A", value: "a" }], note: "hm" };
   assert.equal(formatResultText(r), "✓ Richtig: 1. A\nErklärung: weil\nNotiz: hm");
 });
 
 test("formats dont know", () => {
-  const r = { ...base, answers: [], correct: undefined, dontKnow: true };
+  const r: QuizResult = { ...base, outcome: "dontKnow", answers: [] };
   assert.equal(formatResultText(r), "Weiß nicht.\nRichtig wäre: 1. A\nErklärung: weil");
 });
 
 test("formats cancelled", () => {
-  const r = { ...base, status: "cancelled" as const, answers: [], correct: undefined };
+  const r: QuizResult = { ...base, outcome: "cancelled", answers: [] };
   assert.equal(formatResultText(r), "Quiz abgebrochen, keine Antwort. Weiter ohne Bewertung.");
 });
 

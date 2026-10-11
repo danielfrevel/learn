@@ -1,10 +1,7 @@
 import { createInterface } from "node:readline";
-import {
-  DONT_KNOW_LABEL, DONT_KNOW_VALUE, displayOrder, grade, validateInput,
-  type DisplayOption, type QuizInput,
-} from "./grade.ts";
+import { DONT_KNOW_VALUE, displayOrder, grade, optionTitle, str, validateInput, type DisplayOption, type QuizInput } from "./grade.ts";
 import { plainMath } from "./plainmath.ts";
-import { encodeResult, formatResultText, type QuizResult } from "./result.ts";
+import { encodeResult, formatResultText, toResultOption, type QuizResult } from "./result.ts";
 
 const TOOL = {
   name: "quiz",
@@ -46,6 +43,8 @@ const TOOL = {
 };
 
 const write = (msg: unknown) => process.stdout.write(JSON.stringify(msg) + "\n");
+const reply = (id: unknown, result: unknown) => write({ jsonrpc: "2.0", id, result });
+const fail = (id: unknown, code: number, message: string) => write({ jsonrpc: "2.0", id, error: { code, message } });
 let nextId = 1;
 const pending = new Map<number, (msg: any) => void>();
 
@@ -55,7 +54,6 @@ function request(method: string, params: unknown): Promise<any> {
   return new Promise((resolve) => pending.set(id, resolve));
 }
 
-const numbered = (o: DisplayOption) => (o.value === DONT_KNOW_VALUE ? DONT_KNOW_LABEL : `${o.index}. ${o.label}`);
 const HINT = "→ öffnet die Liste, ↑/↓ wählen, Enter bestätigt.";
 
 function elicitationSchema(quiz: QuizInput, display: DisplayOption[]) {
@@ -64,13 +62,13 @@ function elicitationSchema(quiz: QuizInput, display: DisplayOption[]) {
         type: "array",
         title: "Antwort (mehrere möglich)",
         description: HINT,
-        items: { type: "string", enum: display.map(numbered) },
+        items: { type: "string", enum: display.map(optionTitle) },
       }
     : {
         type: "string",
         title: "Antwort",
         description: HINT,
-        oneOf: display.map((o) => ({ const: o.value, title: numbered(o) })),
+        oneOf: display.map((o) => ({ const: o.value, title: optionTitle(o) })),
       };
   return {
     type: "object",
@@ -84,7 +82,7 @@ function elicitationSchema(quiz: QuizInput, display: DisplayOption[]) {
 
 function selectedValues(display: DisplayOption[], raw: unknown): string[] {
   const picks = Array.isArray(raw) ? raw : [raw];
-  const byTitle = new Map(display.map((o) => [numbered(o), o.value]));
+  const byTitle = new Map(display.map((o) => [optionTitle(o), o.value]));
   return picks
     .filter((p): p is string => typeof p === "string")
     .map((p) => byTitle.get(p) ?? p);
@@ -97,37 +95,20 @@ async function runQuiz(args: unknown) {
   const display = displayOrder(quiz);
   const message = [plainMath(quiz.question), quiz.details ? plainMath(quiz.details) : ""].filter(Boolean).join("\n\n");
   const res = await request("elicitation/create", { mode: "form", message, requestedSchema: elicitationSchema(quiz, display) });
-  const action = res?.result?.action;
-  const content = res?.result?.content ?? {};
-  const options = display.filter((o) => o.value !== DONT_KNOW_VALUE).map(({ index, label, value }) => ({ index, label, value }));
-  const correctIndices = display.filter((o) => quiz.correctAnswer.includes(o.value)).map((o) => o.index);
-  const base: Omit<QuizResult, "answers"> = {
-    status: action === "accept" ? "answered" : "cancelled",
+  const g = res?.result?.action === "accept" ? grade(display, selectedValues(display, res.result.content?.answer), quiz) : undefined;
+  const result: QuizResult = {
+    outcome: !g ? "cancelled" : g.dontKnow ? "dontKnow" : g.correct ? "correct" : "wrong",
     question: quiz.question,
     details: quiz.details,
     mode: quiz.multiSelect ? "multi-select" : "single-select",
-    options,
-    correctIndices,
+    options: display.filter((o) => o.value !== DONT_KNOW_VALUE).map(toResultOption),
+    answers: g?.answers.map(toResultOption) ?? [],
+    correctIndices: display.filter((o) => quiz.correctAnswer.includes(o.value)).map((o) => o.index),
+    note: str(res?.result?.content?.note),
     explanation: quiz.explanation,
   };
-  let result: QuizResult;
-  if (action !== "accept") {
-    result = { ...base, answers: [] };
-  } else {
-    const g = grade(display, selectedValues(display, content.answer), quiz);
-    const note = typeof content.note === "string" && content.note.trim() ? content.note.trim() : undefined;
-    result = {
-      ...base,
-      answers: g.answers.map(({ index, label, value }) => ({ index, label, value })),
-      correct: g.correct,
-      dontKnow: g.dontKnow || undefined,
-      note,
-    };
-  }
   // No structuredContent: Claude Code replaces the content blocks with its JSON, which drops the readable text and the log marker.
-  return {
-    content: [{ type: "text", text: formatResultText(result) }, { type: "text", text: encodeResult(result) }],
-  };
+  return { content: [{ type: "text", text: formatResultText(result) }, { type: "text", text: encodeResult(result) }] };
 }
 
 async function handle(msg: any) {
@@ -139,25 +120,28 @@ async function handle(msg: any) {
   const { id, method, params } = msg;
   switch (method) {
     case "initialize":
-      return write({
-        jsonrpc: "2.0", id,
-        result: {
-          protocolVersion: params?.protocolVersion ?? "2025-06-18",
-          capabilities: { tools: {} },
-          serverInfo: { name: "learn-quiz", version: "0.1.0" },
-        },
+      return reply(id, {
+        protocolVersion: params?.protocolVersion ?? "2025-06-18",
+        capabilities: { tools: {} },
+        serverInfo: { name: "learn-quiz", version: "0.1.0" },
       });
     case "notifications/initialized":
       return;
+    case "notifications/cancelled":
+      for (const [pendingId, resolve] of pending) {
+        resolve({ result: { action: "cancel" } });
+        pending.delete(pendingId);
+      }
+      return;
     case "ping":
-      return write({ jsonrpc: "2.0", id, result: {} });
+      return reply(id, {});
     case "tools/list":
-      return write({ jsonrpc: "2.0", id, result: { tools: [TOOL] } });
+      return reply(id, { tools: [TOOL] });
     case "tools/call":
-      if (params?.name !== "quiz") return write({ jsonrpc: "2.0", id, error: { code: -32602, message: `unknown tool ${params?.name}` } });
-      return write({ jsonrpc: "2.0", id, result: await runQuiz(params.arguments) });
+      if (params?.name !== "quiz") return fail(id, -32602, `unknown tool ${params?.name}`);
+      return reply(id, await runQuiz(params.arguments));
     default:
-      if (id !== undefined) write({ jsonrpc: "2.0", id, error: { code: -32601, message: `method not found: ${method}` } });
+      if (id !== undefined) fail(id, -32601, `method not found: ${method}`);
   }
 }
 

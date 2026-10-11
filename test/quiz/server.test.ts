@@ -61,7 +61,7 @@ test("tools/call grades a correct single-select answer", async (t) => {
   const text = res.result.content.map((c: any) => c.text).join("\n");
   assert.match(text, /^✓ Richtig: 1\. 0\.5\nErklärung: Ein Halbes\.\nNotiz: sicher/);
   const r = decodeResult(text)!;
-  assert.equal(r.correct, true);
+  assert.equal(r.outcome, "correct");
   assert.deepEqual(r.correctIndices, [1]);
   assert.equal(res.result.structuredContent, undefined);
 });
@@ -77,7 +77,7 @@ test("tools/call multi-select uses an array schema and exact-set grading", async
   assert.equal(seen.requestedSchema.properties.answer.type, "array");
   assert.deepEqual(seen.requestedSchema.properties.answer.items.enum, ["1. 0.5", "2. 2", "Ich weiß es nicht"]);
   const r = decodeResult(res.result.content.map((c: any) => c.text).join("\n"))!;
-  assert.equal(r.correct, false);
+  assert.equal(r.outcome, "wrong");
   assert.deepEqual(r.correctIndices, [1, 2]);
 });
 
@@ -85,12 +85,12 @@ test("tools/call dontKnow and cancel", async (t) => {
   const dk = startServer(() => ({ action: "accept", content: { answer: "__dont_know__" } }));
   t.after(dk.stop);
   const r1 = await dk.call("tools/call", { name: "quiz", arguments: quizArgs });
-  assert.equal(decodeResult(r1.result.content[1].text)!.dontKnow, true);
+  assert.equal(decodeResult(r1.result.content[1].text)!.outcome, "dontKnow");
   assert.match(r1.result.content[0].text, /^Weiß nicht\./);
   const cancel = startServer(() => ({ action: "cancel" }));
   t.after(cancel.stop);
   const r2 = await cancel.call("tools/call", { name: "quiz", arguments: quizArgs });
-  assert.equal(decodeResult(r2.result.content[1].text)!.status, "cancelled");
+  assert.equal(decodeResult(r2.result.content[1].text)!.outcome, "cancelled");
 });
 
 test("tools/call with invalid input returns isError without eliciting", async (t) => {

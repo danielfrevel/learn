@@ -3,8 +3,8 @@ set -euo pipefail
 . "$(dirname "$(readlink -f "$0")")/../lib/viz-publish.sh"
 viz_parse_args "$@"
 
+PATH=$PATH:$HOME/.nix-profile/bin
 MMDC=${LEARN_MMDC:-$(command -v mmdc || true)}
-[ -z "$MMDC" ] && [ -x "$HOME/.nix-profile/bin/mmdc" ] && MMDC=$HOME/.nix-profile/bin/mmdc
 [ -z "$MMDC" ] && { echo "mmdc not found. Install: nix profile add nixpkgs#mermaid-cli" >&2; exit 2; }
 
 render_png() {

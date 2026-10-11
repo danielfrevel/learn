@@ -17,10 +17,11 @@ export interface GradeResult {
   dontKnow: boolean;
   correct?: boolean;
   answers: DisplayOption[];
-  correctOptions: DisplayOption[];
 }
 
-const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+export const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+
+export const optionTitle = (o: { index: number; label: string }) => (o.index === 0 ? DONT_KNOW_LABEL : `${o.index}. ${o.label}`);
 
 export function normalizeOptions(raw: unknown): QuizOption[] {
   if (!Array.isArray(raw)) return [];
@@ -49,10 +50,9 @@ export function validateInput(raw: unknown): Validation {
   const multiSelect = r.multiSelect === true;
   const rawCorrect = r.correctAnswer;
   if (multiSelect && !Array.isArray(rawCorrect)) return { ok: false, error: "`correctAnswer` must be an array when `multiSelect` is true." };
-  const correctAnswer = (Array.isArray(rawCorrect) ? rawCorrect : [rawCorrect])
-    .map((v) => str(v))
-    .filter((v): v is string => v !== undefined);
+  const correctAnswer = [...new Set((Array.isArray(rawCorrect) ? rawCorrect : [rawCorrect]).flatMap((v) => str(v) ?? []))];
   if (correctAnswer.length === 0) return { ok: false, error: "`correctAnswer` is required." };
+  if (!multiSelect && correctAnswer.length > 1) return { ok: false, error: "Single-select needs exactly one `correctAnswer`; set `multiSelect: true` for several." };
   const values = new Set(options.map((o) => o.value));
   const unknown = correctAnswer.filter((v) => !values.has(v));
   if (unknown.length > 0) return { ok: false, error: `\`correctAnswer\` references unknown option value(s): ${unknown.join(", ")}. Use the \`value\` of an option.` };
@@ -63,7 +63,7 @@ export function validateInput(raw: unknown): Validation {
       details: str(r.details),
       options,
       multiSelect,
-      correctAnswer: [...new Set(correctAnswer)],
+      correctAnswer,
       explanation,
       shuffle: r.shuffle !== false,
     },
@@ -106,19 +106,11 @@ export function displayOrder(quiz: Pick<QuizInput, "question" | "options" | "shu
   return display;
 }
 
-export function grade(
-  display: DisplayOption[],
-  selected: string[],
-  quiz: Pick<QuizInput, "correctAnswer" | "multiSelect">,
-): GradeResult {
+export function grade(display: DisplayOption[], selected: string[], quiz: Pick<QuizInput, "correctAnswer">): GradeResult {
+  if (selected.includes(DONT_KNOW_VALUE)) return { dontKnow: true, answers: [] };
   const byValue = new Map(display.map((o) => [o.value, o]));
-  const correctOptions = quiz.correctAnswer.map((v) => byValue.get(v)).filter((o): o is DisplayOption => !!o);
-  if (selected.includes(DONT_KNOW_VALUE)) return { dontKnow: true, answers: [], correctOptions };
-  const answers = selected.map((v) => byValue.get(v)).filter((o): o is DisplayOption => !!o);
+  const answers = selected.flatMap((v) => byValue.get(v) ?? []);
   const chosen = new Set(answers.map((o) => o.value));
-  const want = new Set(quiz.correctAnswer);
-  const correct = quiz.multiSelect
-    ? chosen.size === want.size && [...want].every((v) => chosen.has(v))
-    : chosen.size === 1 && want.has(answers[0].value);
-  return { dontKnow: false, correct, answers, correctOptions };
+  const correct = chosen.size === quiz.correctAnswer.length && quiz.correctAnswer.every((v) => chosen.has(v));
+  return { dontKnow: false, correct, answers };
 }

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -17,10 +17,8 @@ export function stateDir(): string {
 const file = (sessionId: string) => join(stateDir(), `${sessionId}.json`);
 
 export function readState(sessionId: string): LogState | undefined {
-  const p = file(sessionId);
-  if (!existsSync(p)) return undefined;
   try {
-    return JSON.parse(readFileSync(p, "utf8")) as LogState;
+    return JSON.parse(readFileSync(file(sessionId), "utf8")) as LogState;
   } catch {
     return undefined;
   }
@@ -28,7 +26,7 @@ export function readState(sessionId: string): LogState | undefined {
 
 export function writeState(sessionId: string, s: LogState): void {
   mkdirSync(stateDir(), { recursive: true });
-  writeFileSync(file(sessionId), JSON.stringify(s, null, 2));
+  writeFileSync(file(sessionId), JSON.stringify(s));
 }
 
 export function deleteState(sessionId: string): void {

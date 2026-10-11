@@ -98,7 +98,7 @@ Tool description carries the original's guidance: options only, reference the co
 Flow per call:
 
 1. Normalize options (`grade.ts`: `normalizeOptions`). Reject with an error result if fewer than 2 remain or `correctAnswer` references an unknown value.
-2. Display order: shuffle unless `shuffle === false`. The shuffle is deterministic (seeded from a hash of question and option values), so the log hook computes the same numbering from `tool_input` without talking to the server. Append the fixed option `Ich weiß es nicht` (value `__dont_know__`) last with index 0. It never shuffles and never counts as correct or wrong.
+2. Display order: shuffle unless `shuffle === false`. Single-select accepts exactly one `correctAnswer`; multi-select grades by set equality. The shuffle is deterministic (seeded from a hash of question and option values), so the log hook computes the same numbering from `tool_input` without talking to the server. Append the fixed option `Ich weiß es nicht` (value `__dont_know__`) last with index 0. It never shuffles and never counts as correct or wrong.
 3. Elicitation request, `mode: "form"`:
    - `message`: question in plain-math form (`plainmath.ts`) plus `details` on a new line.
    - single-select: property `answer`, `type: string`, `oneOf` = `{const: value, title: "<n>. <label>"}` in display order plus `Ich weiß es nicht`, `required`. (Verified in the spike; Claude Code's validator rejects `items` without `type`.)
@@ -126,20 +126,21 @@ Richtig wäre: <correct labels>
 Erklärung: <explanation>
 ```
 
-`structuredContent`:
+Machine-readable result (second text block, `<!--learn-quiz {json}-->`):
 
 ```ts
 {
-  status: "answered" | "cancelled",
+  outcome: "correct" | "wrong" | "dontKnow" | "cancelled",
   question: string, details?: string,
   mode: "single-select" | "multi-select",
   options: { index: number, label: string, value: string }[],  // display order, 1-based
   answers: { index: number, label: string, value: string }[],
   correctIndices: number[],
-  correct?: boolean, dontKnow?: boolean,
   note?: string, explanation: string
 }
 ```
+
+Option titles come from one function (`optionTitle` in `grade.ts`): `"<n>. <label>"`, and `Ich weiß es nicht` without a number for the fixed option (index 0). Dialog, result text and log use the same titles.
 
 `plainmath.ts` is a best-effort rewrite for the terminal only: strip `$`/`$$`, `\frac{a}{b}` to `(a)/(b)`, `\sqrt{x}` to `sqrt(x)`, `\to` to `→`, `\infty` to `∞`, `\le`/`\ge`/`\ne` to `≤ ≥ ≠`, `\cdot` to `·`, `^{...}` and `_{...}` keep braces content with `^`/`_`, Greek letters by name to Unicode, remaining backslash commands keep their name without the backslash. The log receives the untouched LaTeX.
 

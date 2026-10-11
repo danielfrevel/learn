@@ -13,14 +13,31 @@ function run(args: string[], stdin: string, env: Record<string, string>) {
   return execFileSync(process.execPath, [CLI, ...args], { input: stdin, env: { ...process.env, ...env }, encoding: "utf8" });
 }
 
-test("link backfills, sync is idempotent and appends only new entries", () => {
+function setup(sessionId: string, seed?: string) {
   const dir = mkdtempSync(join(tmpdir(), "learn-cli-"));
-  const transcript = join(dir, "s1.jsonl");
-  copyFileSync(FIXTURE, transcript);
+  const transcript = join(dir, `${sessionId}.jsonl`);
+  if (seed) copyFileSync(seed, transcript);
+  else appendFileSync(transcript, "");
   const log = join(dir, "lesson.md");
   const env = { XDG_STATE_HOME: join(dir, "state"), LEARN_TRANSCRIPT: transcript };
+  run(["link", log, "--session", sessionId], "", env);
+  return { dir, transcript, log, env };
+}
 
-  run(["link", log, "--session", "s1"], "", env);
+async function syncWhileAppending(payload: object, env: Record<string, string>, transcript: string, line: object) {
+  const child = execFile(process.execPath, [CLI, "sync"], { env: { ...process.env, ...env } });
+  const exited = new Promise((r) => child.on("exit", r));
+  child.stdin!.end(JSON.stringify(payload));
+  await new Promise((r) => setTimeout(r, 400));
+  appendFileSync(transcript, JSON.stringify(line) + "\n");
+  await exited;
+}
+
+const quizInput = { question: "Q?", options: [{ label: "a" }, { label: "b" }], correctAnswer: "a", explanation: "secret", shuffle: false };
+const QUIZ = "mcp__plugin_learn_quiz__quiz";
+
+test("link backfills, sync is idempotent and appends only new entries", () => {
+  const { dir, transcript, log, env } = setup("s1", FIXTURE);
   const first = readFileSync(log, "utf8");
   assert.ok(first.startsWith("> [!user]\n> Erklär mir Grenzwerte"));
   assert.ok(first.includes("> [!question] Quiz"));
@@ -38,41 +55,22 @@ test("link backfills, sync is idempotent and appends only new entries", () => {
 });
 
 test("PreToolUse renders the question from tool_input before the transcript has it", () => {
-  const dir = mkdtempSync(join(tmpdir(), "learn-cli-"));
-  const transcript = join(dir, "s2.jsonl");
-  appendFileSync(transcript, "");
-  const log = join(dir, "lesson.md");
-  const env = { XDG_STATE_HOME: join(dir, "state"), LEARN_TRANSCRIPT: transcript };
-  run(["link", log, "--session", "s2"], "", env);
-  const payload = {
-    session_id: "s2", transcript_path: transcript, hook_event_name: "PreToolUse",
-    tool_name: "mcp__plugin_learn_quiz__quiz", tool_use_id: "toolu_9",
-    tool_input: { question: "Q?", options: [{ label: "a" }, { label: "b" }], correctAnswer: "a", explanation: "secret", shuffle: false },
-  };
+  const { transcript, log, env } = setup("s2");
+  const payload = { session_id: "s2", transcript_path: transcript, hook_event_name: "PreToolUse", tool_name: QUIZ, tool_use_id: "toolu_9", tool_input: quizInput };
   run(["sync"], JSON.stringify(payload), env);
   const text = readFileSync(log, "utf8");
   assert.ok(text.includes("> [!question] Quiz\n> Q?"));
   assert.ok(!text.includes("secret"));
-  appendFileSync(transcript, JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_9", name: "mcp__plugin_learn_quiz__quiz", input: payload.tool_input }] } }) + "\n");
+  appendFileSync(transcript, JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "tool_use", id: "toolu_9", name: QUIZ, input: quizInput }] } }) + "\n");
   run(["sync"], JSON.stringify({ session_id: "s2", transcript_path: transcript, hook_event_name: "Stop" }), env);
   assert.equal(readFileSync(log, "utf8").split("> [!question] Quiz").length, 2);
 });
 
 test("PreToolUse waits for a lagging transcript and keeps the assistant text before the question", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "learn-cli-"));
-  const transcript = join(dir, "s3.jsonl");
-  appendFileSync(transcript, "");
-  const log = join(dir, "lesson.md");
-  const env = { XDG_STATE_HOME: join(dir, "state"), LEARN_TRANSCRIPT: transcript };
-  run(["link", log, "--session", "s3"], "", env);
-  const input = { question: "Q?", options: [{ label: "a" }, { label: "b" }], correctAnswer: "a", explanation: "secret", shuffle: false };
-  const payload = { session_id: "s3", transcript_path: transcript, hook_event_name: "PreToolUse", tool_name: "mcp__plugin_learn_quiz__quiz", tool_use_id: "toolu_7", tool_input: input };
-  const child = execFile(process.execPath, [CLI, "sync"], { env: { ...process.env, ...env } });
-  const exited = new Promise((r) => child.on("exit", r));
-  child.stdin!.end(JSON.stringify(payload));
-  await new Promise((r) => setTimeout(r, 400));
-  appendFileSync(transcript, JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Vorher" }, { type: "tool_use", id: "toolu_7", name: "mcp__plugin_learn_quiz__quiz", input }] } }) + "\n");
-  await exited;
+  const { transcript, log, env } = setup("s3");
+  const payload = { session_id: "s3", transcript_path: transcript, hook_event_name: "PreToolUse", tool_name: QUIZ, tool_use_id: "toolu_7", tool_input: quizInput };
+  const line = { type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Vorher" }, { type: "tool_use", id: "toolu_7", name: QUIZ, input: quizInput }] } };
+  await syncWhileAppending(payload, env, transcript, line);
   const text = readFileSync(log, "utf8");
   assert.ok(text.includes("Vorher"), text);
   assert.ok(text.indexOf("Vorher") < text.indexOf("> [!question] Quiz"), text);
@@ -80,19 +78,10 @@ test("PreToolUse waits for a lagging transcript and keeps the assistant text bef
 });
 
 test("Stop waits until the last assistant message reached the transcript", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "learn-cli-"));
-  const transcript = join(dir, "s4.jsonl");
-  appendFileSync(transcript, "");
-  const log = join(dir, "lesson.md");
-  const env = { XDG_STATE_HOME: join(dir, "state"), LEARN_TRANSCRIPT: transcript };
-  run(["link", log, "--session", "s4"], "", env);
+  const { transcript, log, env } = setup("s4");
   const payload = { session_id: "s4", transcript_path: transcript, hook_event_name: "Stop", last_assistant_message: "Fertig." };
-  const child = execFile(process.execPath, [CLI, "sync"], { env: { ...process.env, ...env } });
-  const exited = new Promise((r) => child.on("exit", r));
-  child.stdin!.end(JSON.stringify(payload));
-  await new Promise((r) => setTimeout(r, 400));
-  appendFileSync(transcript, JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Fertig." }] } }) + "\n");
-  await exited;
+  const line = { type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Fertig." }] } };
+  await syncWhileAppending(payload, env, transcript, line);
   assert.equal(readFileSync(log, "utf8").trim(), "Fertig.");
 });
 
