@@ -1,6 +1,6 @@
 # learn
 
-Claude Code port of [amosblomqvist/learn](https://github.com/amosblomqvist/learn): a teaching system built on two principles (unconditional truths first, "how could I have discovered this") and a probe → plan → teach loop.
+Claude Code port of [amosblomqvist/learn](https://github.com/amosblomqvist/learn) by Amos Blomqvist: a teaching system built on two principles (unconditional truths first, "how could I have discovered this") and a probe → plan → teach loop. The teaching philosophy, the quiz semantics and the log format come from the original, which was built as a [pi](https://github.com/earendil-works/pi) configuration. This repo replaces the pi extensions with Claude Code plugin parts: an MCP server for the quiz, hooks for the log, bash scripts and subagents for the visuals. The `teach` skill is a close copy of the original text, adapted to Claude Code tool names and German teaching language.
 
 ## What is in it
 
@@ -52,3 +52,14 @@ Open the vault in Obsidian and read the lesson there; answer quizzes in the term
 ## Development
 
 `npm test`, `npm run typecheck`, `claude plugin validate .`. `nix develop` gives a shell with node, mermaid-cli and librsvg.
+
+## Open todos
+
+- `learn-init` lists only top-level `*.pdf` and `*.md` as lecture material. PDFs in subfolders go into `CLAUDE.md` by hand.
+- The output style relies on `force-for-plugin`. If a session answers in terse mode, run `/output-style learn`.
+- Maker agents have unrestricted `Bash`; only the prompt limits them to `render-mermaid` / `render-svg`.
+- `learn-mdlog link` derives the transcript path from cwd and session id. Hooks correct it on the first sync, so a wrong guess only costs the backfill.
+- The quiz tool name appears in `hooks/hooks.json`, `src/mdlog/render.ts` and `src/quiz/server.ts`. Renaming the MCP server means editing all three.
+- `render-mermaid` needs Chromium sockets. Inside the Claude Code bash sandbox it only works through `sandbox.excludedCommands`, which `learn-init` writes. If it still fails, set `"sandbox": {"enabled": false}` in the learning project.
+- Multi-select elicitation and the `AskUserQuestion` log callouts were verified by tests and the headless run, not yet in a full interactive lesson.
+- No `ask_user_question` popup replacement: Claude Code's built-in `AskUserQuestion` is limited to 4 options per question.
