@@ -69,7 +69,7 @@ learn/
   docs/superpowers/specs/
 ```
 
-Runtime: Node 25 runs `.ts` files directly (type stripping), so there is no build step. Dependencies: `@modelcontextprotocol/sdk`, `zod`. Dev: `typescript` for `tsc --noEmit`. Tests: `node --test`. The flake provides `nodejs`, `mermaid-cli`, `librsvg` for development and for `nix profile install`.
+Runtime: Node 25 runs `.ts` files directly (type stripping), so there is no build step. No runtime dependencies: the quiz server speaks JSON-RPC over stdio directly (about 150 lines, verified in the spike). Dev: `typescript`, `@types/node` for `tsc --noEmit`. Tests: `node --test`. The flake provides `nodejs`, `mermaid-cli`, `librsvg` for development and for `nix profile install`.
 
 Plugin name: `learn`. Marketplace `learn-local` points at the repo directory, so edits apply on the next session without reinstall.
 
@@ -98,15 +98,15 @@ Tool description carries the original's guidance: options only, reference the co
 Flow per call:
 
 1. Normalize options (`grade.ts`: `normalizeOptions`). Reject with an error result if fewer than 2 remain or `correctAnswer` references an unknown value.
-2. Display order: shuffle unless `shuffle === false`. Append the fixed option `Ich weiß es nicht` (value `__dont_know__`) last. It never shuffles and never counts as correct or wrong.
+2. Display order: shuffle unless `shuffle === false`. The shuffle is deterministic (seeded from a hash of question and option values), so the log hook computes the same numbering from `tool_input` without talking to the server. Append the fixed option `Ich weiß es nicht` (value `__dont_know__`) last with index 0. It never shuffles and never counts as correct or wrong.
 3. Elicitation request, `mode: "form"`:
    - `message`: question in plain-math form (`plainmath.ts`) plus `details` on a new line.
-   - single-select: property `answer`, `type: string`, `enum` = values in display order plus `__dont_know__`, `enumNames` = `"<n>. <label>"` (plus ` — <description>` when present), `required`.
-   - multi-select: property `answer`, `type: array`, `items: {type: string, enum: [...]}`, same titles via `items.enumNames` where supported; the `Ich weiß es nicht` value is included as a selectable entry.
+   - single-select: property `answer`, `type: string`, `oneOf` = `{const: value, title: "<n>. <label>"}` in display order plus `Ich weiß es nicht`, `required`. (Verified in the spike; Claude Code's validator rejects `items` without `type`.)
+   - multi-select: property `answer`, `type: array`, `items: {type: "string", enum: ["<n>. <label>", ...]}`; the server maps titles back to values. `Ich weiß es nicht` is a selectable entry.
    - property `note`, `type: string`, optional, title `Notiz (optional)`.
    - Each description includes the hint `→ öffnet die Liste` because the control is not self-explanatory.
 4. Grade in the server (`grade.ts`: `grade`): single-select correct when the chosen value equals `correctAnswer`; multi-select correct when the chosen set equals the correct set. If the selection contains `__dont_know__`, the result is `dontKnow: true`, `correct: undefined`. Decline or cancel yields `status: "cancelled"`.
-5. Return `content` text for Claude and `structuredContent` for the log hook.
+5. Return `content` with two text blocks (human-readable result, then `<!--learn-quiz {json}-->` for the log renderer) and `structuredContent` with the same JSON.
 
 Text result formats (German):
 
