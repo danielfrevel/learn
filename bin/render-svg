@@ -9,7 +9,7 @@ render_png() {
   elif command -v magick >/dev/null; then
     magick -density 192 -background white "$SRC" "$1"
   else
-    echo "neither rsvg-convert nor magick found. Install: nix profile install nixpkgs#librsvg" >&2
+    echo "neither rsvg-convert nor magick found. Install: nix profile add nixpkgs#librsvg" >&2
     exit 2
   fi
 }

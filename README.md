@@ -16,7 +16,7 @@ Claude Code port of [amosblomqvist/learn](https://github.com/amosblomqvist/learn
 ## Requirements
 
 - Claude Code ≥ 2.1.290, Node ≥ 22.18 on PATH (runs `.ts` directly)
-- `rsvg-convert` (librsvg) for SVG, `mmdc` for Mermaid: `nix profile install nixpkgs#mermaid-cli nixpkgs#librsvg`
+- `rsvg-convert` (librsvg) for SVG, `mmdc` for Mermaid: `nix profile add nixpkgs#mermaid-cli nixpkgs#librsvg`
 - Obsidian, with the learning directory opened as a vault
 
 ## Install

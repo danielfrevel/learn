@@ -75,4 +75,4 @@ That's all. The `md-log` extension mirrors your reply text verbatim into the lin
 - PNG embed means **what the maker verified is pixel-identical to what the learner sees** — no re-render drift.
 - Unique filenames keep Obsidian's by-filename embed resolution unambiguous.
 
-> The makers render through the plugin's `bin/render-mermaid` (mermaid-cli, needs `nix profile install nixpkgs#mermaid-cli`) and `bin/render-svg` (`rsvg-convert`). You never render anything yourself — you only brief the maker and embed the filename it returns.
+> The makers render through the plugin's `bin/render-mermaid` (mermaid-cli, needs `nix profile add nixpkgs#mermaid-cli`) and `bin/render-svg` (`rsvg-convert`). You never render anything yourself — you only brief the maker and embed the filename it returns.
