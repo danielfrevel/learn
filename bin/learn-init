@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+dir=$(readlink -f "${1:-.}")
+plugin_root=$(readlink -f "$(dirname "$(readlink -f "$0")")/..")
+mkdir -p "$dir/.claude" "$dir/lessons" "$dir/viz"
+touch "$dir/lessons/.gitkeep" "$dir/viz/.gitkeep"
+
+settings=$dir/.claude/settings.json
+if [ ! -f "$settings" ]; then
+  cat > "$settings" <<EOF
+{
+  "extraKnownMarketplaces": {
+    "learn-local": { "source": { "source": "directory", "path": "$plugin_root" } }
+  },
+  "enabledPlugins": { "learn@learn-local": true },
+  "sandbox": { "excludedCommands": ["render-mermaid *"] }
+}
+EOF
+  echo "wrote $settings"
+else
+  echo "kept existing $settings (ensure enabledPlugins learn@learn-local and sandbox.excludedCommands render-mermaid *)"
+fi
+
+claude_md=$dir/CLAUDE.md
+if [ ! -f "$claude_md" ]; then
+  {
+    echo "# Learning vault"
+    echo
+    echo "This directory is an Obsidian vault for learning, not a software project. Normal mode: full sentences, German, the \`teach\` skill applies to every explanation. Caveman or terse modes are off here."
+    echo
+    echo "## Lecture material (primary sources for the researcher)"
+    echo
+    find "$dir" -maxdepth 1 \( -name '*.pdf' -o -name '*.md' \) ! -name CLAUDE.md -printf '- %f\n' | sort
+    echo
+    echo "## Layout"
+    echo
+    echo "- \`lessons/\`: one markdown log per session, linked with \`/learn:md-log lessons/<date>-<topic>.md\`"
+    echo "- \`viz/\`: published diagrams, embedded as \`![[viz-...png|500]]\`"
+  } > "$claude_md"
+  echo "wrote $claude_md"
+else
+  echo "kept existing $claude_md"
+fi
