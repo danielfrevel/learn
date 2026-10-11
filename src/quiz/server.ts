@@ -124,9 +124,9 @@ async function runQuiz(args: unknown) {
       note,
     };
   }
+  // No structuredContent: Claude Code replaces the content blocks with its JSON, which drops the readable text and the log marker.
   return {
     content: [{ type: "text", text: formatResultText(result) }, { type: "text", text: encodeResult(result) }],
-    structuredContent: result,
   };
 }
 

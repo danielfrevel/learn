@@ -12,7 +12,7 @@ render_png() {
   cfg=$(dirname "$1")/puppeteer.json
   # Chromium's own sandbox cannot start inside the Claude Code bash sandbox.
   echo '{"args":["--no-sandbox","--disable-gpu"]}' > "$cfg"
-  "$MMDC" -q -i "$SRC" -o "$1" -b white -s 2 -p "$cfg"
+  timeout 90 "$MMDC" -q -i "$SRC" -o "$1" -b white -s 2 -p "$cfg"
 }
 
 viz_main

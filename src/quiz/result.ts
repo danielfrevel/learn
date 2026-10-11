@@ -32,11 +32,14 @@ export function encodeResult(r: QuizResult): string {
   return `<!--${RESULT_MARKER} ${JSON.stringify(r)}-->`;
 }
 
+const isResult = (v: unknown): v is QuizResult =>
+  typeof v === "object" && v !== null && "status" in v && "options" in v && "correctIndices" in v;
+
 export function decodeResult(text: string): QuizResult | undefined {
   const m = text.match(new RegExp(`<!--${RESULT_MARKER} (\\{[\\s\\S]*?\\})-->`));
-  if (!m) return undefined;
   try {
-    return JSON.parse(m[1]) as QuizResult;
+    const parsed: unknown = JSON.parse(m ? m[1] : text);
+    return isResult(parsed) ? parsed : undefined;
   } catch {
     return undefined;
   }

@@ -27,6 +27,11 @@ test("formats cancelled", () => {
   assert.equal(formatResultText(r), "Quiz abgebrochen, keine Antwort. Weiter ohne Bewertung.");
 });
 
+test("decodeResult accepts a bare JSON result as Claude Code stores structured output", () => {
+  assert.deepEqual(decodeResult(JSON.stringify(base)), base);
+  assert.equal(decodeResult('{"foo":1}'), undefined);
+});
+
 test("encode and decode round-trip inside other text", () => {
   const text = "✗ Falsch\n" + encodeResult(base) + "\n";
   assert.deepEqual(decodeResult(text), base);

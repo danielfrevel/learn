@@ -106,7 +106,7 @@ Flow per call:
    - property `note`, `type: string`, optional, title `Notiz (optional)`.
    - Each description includes the hint `→ öffnet die Liste` because the control is not self-explanatory.
 4. Grade in the server (`grade.ts`: `grade`): single-select correct when the chosen value equals `correctAnswer`; multi-select correct when the chosen set equals the correct set. If the selection contains `__dont_know__`, the result is `dontKnow: true`, `correct: undefined`. Decline or cancel yields `status: "cancelled"`.
-5. Return `content` with two text blocks (human-readable result, then `<!--learn-quiz {json}-->` for the log renderer) and `structuredContent` with the same JSON.
+5. Return `content` with two text blocks (human-readable result, then `<!--learn-quiz {json}-->` for the log renderer). No `structuredContent`: Claude Code 2.1.295 replaces the content blocks with the structured JSON when it is present, which drops the readable text and the marker (observed in the headless end-to-end run). The renderer also accepts a bare JSON result for robustness.
 
 Text result formats (German):
 
