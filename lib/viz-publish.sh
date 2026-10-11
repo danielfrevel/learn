@@ -1,9 +1,6 @@
 viz_main() {
-  local name work out
-  name=$(basename "$SRC"); name=${name%.*}
-  work=${TMPDIR:-/tmp}/learn-viz/$name
-  mkdir -p "$work"
-  out=$work/preview.png
+  local out
+  out=$(dirname "$(readlink -f "$SRC")")/preview.png
   render_png "$out"
   echo "preview: $out"
   if [ -n "$SAVE_AS" ]; then

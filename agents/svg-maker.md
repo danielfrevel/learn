@@ -25,7 +25,7 @@ You are done only when you have **looked at the rendered PNG and confirmed it is
 
 1. **Plan the coordinate space.** Choose a `viewBox` and sketch where each element sits before drawing. Leave margins so nothing touches the edge. Keep it to ONE idea and few elements.
 2. **Write the source** with `Write` to `/tmp/learn-viz/<short-kebab-topic>/source.svg`: a complete `<svg>…</svg>` with explicit `width`/`height` (or viewBox), a white or transparent background, readable `font-family="sans-serif"`, and font sizes large enough to read when embedded.
-3. **Render a preview**: `render-svg /tmp/learn-viz/<topic>/source.svg`. It prints `preview: <path>`. Open that path with `Read` and look at the image.
+3. **Render a preview**: `render-svg /tmp/learn-viz/<topic>/source.svg`. It writes `preview.png` next to your source and prints `preview: <path>`. Open that path with `Read` and look at the image.
 4. **LOOK critically:**
    - Is every coordinate, angle, direction, and proportion actually correct? Re-derive the geometry if unsure.
    - Are labels placed clearly, not overlapping lines or each other?

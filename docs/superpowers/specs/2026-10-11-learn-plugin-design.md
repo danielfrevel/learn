@@ -105,8 +105,8 @@ Flow per call:
    - multi-select: property `answer`, `type: array`, `items: {type: "string", enum: ["<n>. <label>", ...]}`; the server maps titles back to values. `Ich weiß es nicht` is a selectable entry.
    - property `note`, `type: string`, optional, title `Notiz (optional)`.
    - Each description includes the hint `→ öffnet die Liste` because the control is not self-explanatory.
-4. Grade in the server (`grade.ts`: `grade`): single-select correct when the chosen value equals `correctAnswer`; multi-select correct when the chosen set equals the correct set. If the selection contains `__dont_know__`, the result is `dontKnow: true`, `correct: undefined`. Decline or cancel yields `status: "cancelled"`.
-5. Return `content` with two text blocks (human-readable result, then `<!--learn-quiz {json}-->` for the log renderer). No `structuredContent`: Claude Code 2.1.295 replaces the content blocks with the structured JSON when it is present, which drops the readable text and the marker (observed in the headless end-to-end run). The renderer also accepts a bare JSON result for robustness.
+4. Grade in the server (`grade.ts`: `grade`): correct when the chosen set equals the correct set (single-select is the one-element case). A selection containing `__dont_know__` yields `outcome: "dontKnow"`. Decline or cancel yields `outcome: "cancelled"`.
+5. Return `content` with two text blocks (human-readable result, then `<!--learn-quiz {json}-->` for the log renderer). No `structuredContent`: Claude Code 2.1.295 replaces the content blocks with the structured JSON when it is present, which drops the readable text and the marker (observed in the headless end-to-end run).
 
 Text result formats (German):
 
@@ -167,7 +167,7 @@ Timeout 10 s each. Any failure logs to stderr and exits 0, so the session never 
 
 `render.ts` mirrors the original callouts:
 
-- user: `> [!user]` with the text, skill expansions (`<command-message>`, `<command-name>`, system reminders) stripped.
+- user: `> [!user]` with the text, harness envelopes stripped (`<command-*>`, `<system-reminder>`, `<local-command-*>`, `<task-notification>`, `<bash-*>`, `<agent-message>`, `<cross-session-message>`); an entry that is only envelope renders nothing.
 - assistant: text verbatim, concatenated text blocks separated by blank lines. Tool calls other than quiz and AskUserQuestion produce nothing.
 - `tool_use` of quiz: `> [!question] Quiz` with the question, details, numbered options in **display order**. Display order comes from the matching `tool_result.structuredContent.options` when already present, otherwise from `tool_input.options` in given order. Never `correctAnswer`, never `explanation`.
 - `tool_use` of AskUserQuestion: `> [!question] Frage` with each question and its options.
@@ -182,7 +182,7 @@ Question blocks for a quiz are rendered at `PreToolUse` time when the `tool_use`
 
 `bin/render-mermaid <source.mmd> [--save-as <slug>]` and `bin/render-svg <source.svg> [--save-as <slug>]`, bash scripts:
 
-- Preview: render to `$TMPDIR/learn-viz/<pid>/preview.png`, print `preview: <path>`.
+- Preview: render to `preview.png` next to the source file (each maker owns its own source directory, so parallel makers never collide), print `preview: <path>`.
 - `--save-as`: additionally copy to `<cwd>/viz/viz-<slug>-<unix-ms>.png`, print `filename: <name>` and `path: <abs path>`.
 - Mermaid: `mmdc -i src -o out -b white -s 2 -p <puppeteer.json>` with `{"args": ["--no-sandbox", "--disable-gpu"]}`. `mmdc` resolved from PATH, then `~/.nix-profile/bin/mmdc`. Missing binary prints an install hint and exits 2.
 - SVG: `rsvg-convert -z 2 -b white -o out src`; fallback `magick src out`.

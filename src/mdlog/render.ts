@@ -1,4 +1,4 @@
-import { displayOrder, normalizeOptions, optionTitle, str, validateInput } from "../quiz/grade.ts";
+import { displayOrder, optionTitle, validateInput } from "../quiz/grade.ts";
 import { decodeResult, formatResultText, type Outcome } from "../quiz/result.ts";
 import type { Event } from "./transcript.ts";
 
@@ -9,12 +9,11 @@ const quote = (lines: string[]) => lines.flatMap((l) => l.split("\n")).map((l) =
 const callout = (type: string, title: string, body: string[]) => quote([`[!${type}] ${title}`, ...body]);
 const optionLine = (title: string, description?: string) => (description ? `${title}: ${description}` : title);
 
+const HARNESS_TAGS = "command-[a-z]+|system-reminder|local-command-[a-z]+|task-notification|bash-input|bash-stdout|bash-stderr|agent-message|cross-session-message";
+const HARNESS_RE = new RegExp(`<(${HARNESS_TAGS})(?:\\s[^>]*)?>[\\s\\S]*?</\\1>`, "g");
+
 function stripNoise(text: string): string {
-  return text
-    .replace(/<command-[a-z]+>[\s\S]*?<\/command-[a-z]+>/g, "")
-    .replace(/<system-reminder[^>]*>[\s\S]*?<\/system-reminder>/g, "")
-    .replace(/<local-command-[a-z]+>[\s\S]*?<\/local-command-[a-z]+>/g, "")
-    .trim();
+  return text.replace(HARNESS_RE, "").trim();
 }
 
 function userBlock(text: string): string | undefined {
@@ -22,13 +21,11 @@ function userBlock(text: string): string | undefined {
   return clean ? quote(["[!user]", clean]) : undefined;
 }
 
-function quizQuestion(input: any): string {
+function quizQuestion(input: unknown): string | undefined {
   const v = validateInput(input);
-  const quiz = v.ok
-    ? v.quiz
-    : { question: str(input?.question) ?? "", details: str(input?.details), options: normalizeOptions(input?.options), shuffle: input?.shuffle !== false };
-  const body = [quiz.question, ...(quiz.details ? [quiz.details] : []), ""];
-  for (const o of displayOrder(quiz)) body.push(optionLine(optionTitle(o), o.description));
+  if (!v.ok) return undefined;
+  const body = [v.quiz.question, ...(v.quiz.details ? [v.quiz.details] : []), ""];
+  for (const o of displayOrder(v.quiz)) body.push(optionLine(optionTitle(o), o.description));
   return callout("question", "Quiz", body);
 }
 

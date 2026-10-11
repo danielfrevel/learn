@@ -21,7 +21,7 @@ You are not done when the diagram renders. You are done when you have **looked a
 
 1. **Understand the idea, then cut.** A brief is a wish-list, not a spec. Keep the idea intact but drop any node/label that doesn't earn its place. If you're about to draw more than ~7 nodes, stop and simplify — a diagram of 4 nodes that each pull weight beats one of 12 that fight for space. Cramming is the #1 way these fail.
 2. **Write the source** with `Write` to `/tmp/learn-viz/<short-kebab-topic>/source.mmd`. Pick the diagram type that fits: `graph TD`/`LR` (dependency graphs, flows), `sequenceDiagram`, `stateDiagram-v2`, `erDiagram`, `mindmap`, `timeline`, `classDiagram`.
-3. **Render a preview**: `render-mermaid /tmp/learn-viz/<topic>/source.mmd`. It prints `preview: <path>`. Open that path with `Read` and look at the image.
+3. **Render a preview**: `render-mermaid /tmp/learn-viz/<topic>/source.mmd`. It writes `preview.png` next to your source and prints `preview: <path>`. Open that path with `Read` and look at the image.
 4. **LOOK critically:**
    - Is every arrow pointing the right way? Is every dependency/relationship actually true to the brief?
    - Are the labels correct and unambiguous?

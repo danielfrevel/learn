@@ -67,6 +67,21 @@ test("user text strips command tags and system reminders", () => {
   assert.equal(blocks[0], "> [!user]\n> hallo");
 });
 
+test("harness envelopes in user entries render nothing", () => {
+  const envelopes = [
+    "<task-notification>\n<task-id>x</task-id>\n<result>Researcher brief</result>\n</task-notification>",
+    "<bash-input>ls</bash-input>\n<bash-stdout>a b</bash-stdout><bash-stderr></bash-stderr>",
+    "<local-command-caveat>c</local-command-caveat>",
+  ];
+  const blocks = renderEvents(envelopes.map((text) => ({ kind: "user_text" as const, text })), new Set());
+  assert.deepEqual(blocks, []);
+});
+
+test("an invalid quiz call renders no question block", () => {
+  const input = { question: "q", options: [{ label: "a" }, { label: "b" }], correctAnswer: "nope", explanation: "x" };
+  assert.equal(questionBlock("mcp__plugin_learn_quiz__quiz", input), undefined);
+});
+
 test("tool results of other tools render nothing", () => {
   const blocks = renderEvents([{ kind: "tool_use", id: "x", name: "Bash", input: {} }, { kind: "tool_result", toolUseId: "x", text: "ls output", toolUseResult: undefined }], new Set());
   assert.deepEqual(blocks, []);

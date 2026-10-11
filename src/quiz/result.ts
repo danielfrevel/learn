@@ -41,9 +41,9 @@ const isResult = (v: unknown): v is QuizResult =>
 
 export function decodeResult(text: string): QuizResult | undefined {
   const m = text.match(MARKER_RE);
-  if (!m && !text.startsWith("{")) return undefined;
+  if (!m) return undefined;
   try {
-    const parsed: unknown = JSON.parse(m ? m[1] : text);
+    const parsed: unknown = JSON.parse(m[1]);
     return isResult(parsed) ? parsed : undefined;
   } catch {
     return undefined;
