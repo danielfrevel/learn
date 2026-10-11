@@ -79,6 +79,23 @@ test("PreToolUse waits for a lagging transcript and keeps the assistant text bef
   assert.equal(text.split("> [!question] Quiz").length, 2);
 });
 
+test("Stop waits until the last assistant message reached the transcript", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "learn-cli-"));
+  const transcript = join(dir, "s4.jsonl");
+  appendFileSync(transcript, "");
+  const log = join(dir, "lesson.md");
+  const env = { XDG_STATE_HOME: join(dir, "state"), LEARN_TRANSCRIPT: transcript };
+  run(["link", log, "--session", "s4"], "", env);
+  const payload = { session_id: "s4", transcript_path: transcript, hook_event_name: "Stop", last_assistant_message: "Fertig." };
+  const child = execFile(process.execPath, [CLI, "sync"], { env: { ...process.env, ...env } });
+  const exited = new Promise((r) => child.on("exit", r));
+  child.stdin!.end(JSON.stringify(payload));
+  await new Promise((r) => setTimeout(r, 400));
+  appendFileSync(transcript, JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Fertig." }] } }) + "\n");
+  await exited;
+  assert.equal(readFileSync(log, "utf8").trim(), "Fertig.");
+});
+
 test("sync without a linked log exits 0 and writes nothing", () => {
   const dir = mkdtempSync(join(tmpdir(), "learn-cli-"));
   const out = run(["sync"], JSON.stringify({ session_id: "nope", transcript_path: join(dir, "x.jsonl") }), { XDG_STATE_HOME: join(dir, "state") });

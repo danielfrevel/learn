@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { dirname, resolve } from "node:path";
 import { isQuestionTool, questionBlock, renderEvents } from "./render.ts";
 import { deleteState, readState, writeState, type LogState } from "./state.ts";
-import { parseTranscript, transcriptPathFor } from "./transcript.ts";
+import { parseTranscript, transcriptPathFor, type Event } from "./transcript.ts";
 
 interface HookPayload {
   session_id?: string;
@@ -12,6 +12,7 @@ interface HookPayload {
   tool_name?: string;
   tool_use_id?: string;
   tool_input?: unknown;
+  last_assistant_message?: string;
 }
 
 function readPayload(): HookPayload {
@@ -40,16 +41,27 @@ function append(state: LogState, blocks: string[]): void {
 const WAIT_STEP_MS = 100;
 const WAIT_MAX_MS = 1500;
 
-// Claude Code writes the transcript a moment after the PreToolUse hook fires.
-// Waiting briefly for the tool_use entry keeps the assistant text ahead of the question.
-function readTranscript(state: LogState, awaitToolUseId?: string) {
+// Claude Code writes the transcript a moment after a hook fires. Waiting briefly for the
+// entry the hook announces keeps the log complete and in order.
+function readTranscript(state: LogState, arrived?: (events: Event[]) => boolean) {
   let parsed = parseTranscript(readFileSync(state.transcript), state.cursor);
-  const seen = () => parsed.events.some((e) => e.kind === "tool_use" && e.id === awaitToolUseId);
-  for (let waited = 0; awaitToolUseId && !seen() && waited < WAIT_MAX_MS; waited += WAIT_STEP_MS) {
+  for (let waited = 0; arrived && !arrived(parsed.events) && waited < WAIT_MAX_MS; waited += WAIT_STEP_MS) {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, WAIT_STEP_MS);
     parsed = parseTranscript(readFileSync(state.transcript), state.cursor);
   }
   return parsed;
+}
+
+function expectedEntry(payload: HookPayload): ((events: Event[]) => boolean) | undefined {
+  if (payload.hook_event_name === "PreToolUse" && payload.tool_name && isQuestionTool(payload.tool_name) && payload.tool_use_id) {
+    const id = payload.tool_use_id;
+    return (events) => events.some((e) => e.kind === "tool_use" && e.id === id);
+  }
+  if (payload.hook_event_name === "Stop" && payload.last_assistant_message?.trim()) {
+    const last = payload.last_assistant_message.trim();
+    return (events) => events.some((e) => e.kind === "assistant_text" && e.text.trim() === last);
+  }
+  return undefined;
 }
 
 function sync(sessionId: string, payload: HookPayload): void {
@@ -59,8 +71,7 @@ function sync(sessionId: string, payload: HookPayload): void {
   const rendered = new Set(state.rendered);
   const blocks: string[] = [];
   if (existsSync(state.transcript)) {
-    const awaitId = payload.hook_event_name === "PreToolUse" && payload.tool_name && isQuestionTool(payload.tool_name) ? payload.tool_use_id : undefined;
-    const parsed = readTranscript(state, awaitId);
+    const parsed = readTranscript(state, expectedEntry(payload));
     blocks.push(...renderEvents(parsed.events, rendered));
     state.cursor = parsed.cursor;
   }
