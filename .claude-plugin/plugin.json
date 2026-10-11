@@ -1,0 +1,6 @@
+{
+  "name": "learn",
+  "description": "Teaching system: probe, plan, teach. Graded quiz, Obsidian log, verified diagrams.",
+  "version": "0.1.0",
+  "author": { "name": "dan" }
+}

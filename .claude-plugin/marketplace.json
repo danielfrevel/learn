@@ -1,0 +1,7 @@
+{
+  "name": "learn-local",
+  "owner": { "name": "dan" },
+  "plugins": [
+    { "name": "learn", "source": "./", "description": "Teaching system for university math and CS." }
+  ]
+}
