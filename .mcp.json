@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "quiz": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/src/quiz/server.ts"]
+    }
+  }
+}
