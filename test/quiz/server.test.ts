@@ -2,13 +2,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { decodeResult } from "../../src/quiz/result.ts";
 
 const SERVER = fileURLToPath(new URL("../../src/quiz/server.ts", import.meta.url));
 
-function startServer(onElicit: (params: any) => unknown) {
-  const child = spawn(process.execPath, [SERVER], { stdio: ["pipe", "pipe", "inherit"] });
+function startServer(onElicit: (params: any) => unknown, env: Record<string, string> = { LEARN_QUIZ_OPENER: "/nonexistent/opener" }) {
+  const child = spawn(process.execPath, [SERVER], { stdio: ["pipe", "pipe", "inherit"], env: { ...process.env, ...env } });
   const waiting = new Map<number, (msg: any) => void>();
   let id = 1;
   createInterface({ input: child.stdout }).on("line", (line) => {
@@ -55,7 +58,7 @@ test("tools/call grades a correct single-select answer", async (t) => {
   t.after(s.stop);
   const res = await s.call("tools/call", { name: "quiz", arguments: quizArgs });
   assert.equal(seen.mode, "form");
-  assert.equal(seen.message, "Was ist (1)/(2)?\n\n1. 0.5\n2. 2");
+  assert.equal(seen.message, "Was ist (1)/(2)?");
   assert.deepEqual(seen.requestedSchema.properties.answer.oneOf.map((o: any) => o.title), ["1. 0.5", "2. 2", "Ich weiß es nicht"]);
   assert.deepEqual(seen.requestedSchema.required, ["answer"]);
   const text = res.result.content.map((c: any) => c.text).join("\n");
@@ -114,4 +117,31 @@ test("tools/call with invalid input returns isError without eliciting", async (t
   assert.equal(res.result.isError, true);
   assert.match(res.result.content[0].text, /nope/);
   assert.equal(elicited, false);
+});
+
+const OPENER = fileURLToPath(new URL("../fixtures/answer-quiz.mjs", import.meta.url));
+
+async function answerInBrowser(t: any, answer: unknown) {
+  const report = join(mkdtempSync(join(tmpdir(), "quiz-")), "report.json");
+  const s = startServer(() => assert.fail("terminal form must not open"), {
+    LEARN_QUIZ_OPENER: OPENER, QUIZ_ANSWER: JSON.stringify(answer), QUIZ_EXPECT: "Was ist $\\\\frac{1}{2}$?", QUIZ_REPORT: report,
+  });
+  t.after(s.stop);
+  const res = await s.call("tools/call", { name: "quiz", arguments: quizArgs });
+  while (!existsSync(report)) await new Promise((r) => setTimeout(r, 20));
+  return { text: res.result.content.map((c: any) => c.text).join("\n"), report: JSON.parse(readFileSync(report, "utf8")) };
+}
+
+test("browser quiz serves the page with LaTeX and KaTeX, grades the posted answer", async (t) => {
+  const { text, report } = await answerInBrowser(t, { answers: ["half"], note: "sicher" });
+  assert.equal(report.page, true);
+  assert.equal(report.katex, 200);
+  assert.equal(report.posted.outcome, "correct");
+  assert.equal(report.again, 410);
+  assert.match(text, /^✓ Richtig: 1\. 0\.5\nErklärung: Ein Halbes\.\nNotiz: sicher/);
+});
+
+test("browser quiz cancel ends the tool call without grading", async (t) => {
+  const { text } = await answerInBrowser(t, { cancel: true });
+  assert.equal(decodeResult(text)!.outcome, "cancelled");
 });

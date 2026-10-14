@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline";
 import { DONT_KNOW_VALUE, displayOrder, grade, optionTitle, str, validateInput, type DisplayOption, type QuizInput } from "./grade.ts";
 import { plainMath } from "./plainmath.ts";
+import { askInBrowser, cancelOpenQuizzes, type Submission } from "./popup.ts";
 import { encodeResult, formatResultText, toResultOption, type QuizResult } from "./result.ts";
 
 const TOOL = {
@@ -89,17 +90,9 @@ function selectedValues(display: DisplayOption[], raw: unknown): string[] {
     .map((p) => byTitle.get(p) ?? p);
 }
 
-async function runQuiz(args: unknown) {
-  const v = validateInput(args);
-  if (!v.ok) return { isError: true, content: [{ type: "text", text: `quiz: ${v.error}` }] };
-  const quiz = v.quiz;
-  const display = displayOrder(quiz);
-  // Claude Code cuts select entries to one line, the message wraps, so the full option text lives here.
-  const optionLines = display.filter((o) => o.value !== DONT_KNOW_VALUE).map(plainTitle).join("\n");
-  const message = [plainMath(quiz.question), quiz.details ? plainMath(quiz.details) : "", optionLines].filter(Boolean).join("\n\n");
-  const res = await request("elicitation/create", { mode: "form", message, requestedSchema: elicitationSchema(quiz, display) });
-  const g = res?.result?.action === "accept" ? grade(display, selectedValues(display, res.result.content?.answer), quiz) : undefined;
-  const result: QuizResult = {
+function settle(quiz: QuizInput, display: DisplayOption[], submission: Submission | undefined): QuizResult {
+  const g = submission ? grade(display, submission.answers, quiz) : undefined;
+  return {
     outcome: !g ? "cancelled" : g.dontKnow ? "dontKnow" : g.correct ? "correct" : "wrong",
     question: quiz.question,
     details: quiz.details,
@@ -107,9 +100,26 @@ async function runQuiz(args: unknown) {
     options: display.filter((o) => o.value !== DONT_KNOW_VALUE).map(toResultOption),
     answers: g?.answers.map(toResultOption) ?? [],
     correctIndices: display.filter((o) => quiz.correctAnswer.includes(o.value)).map((o) => o.index),
-    note: str(res?.result?.content?.note),
+    note: str(submission?.note),
     explanation: quiz.explanation,
   };
+}
+
+async function askInTerminal(quiz: QuizInput, display: DisplayOption[]): Promise<Submission | undefined> {
+  const message = [plainMath(quiz.question), quiz.details ? plainMath(quiz.details) : ""].filter(Boolean).join("\n\n");
+  const res = await request("elicitation/create", { mode: "form", message, requestedSchema: elicitationSchema(quiz, display) });
+  if (res?.result?.action !== "accept") return undefined;
+  return { answers: selectedValues(display, res.result.content?.answer), note: res.result.content?.note };
+}
+
+async function runQuiz(args: unknown) {
+  const v = validateInput(args);
+  if (!v.ok) return { isError: true, content: [{ type: "text", text: `quiz: ${v.error}` }] };
+  const quiz = v.quiz;
+  const display = displayOrder(quiz);
+  const view = { question: quiz.question, details: quiz.details, multiSelect: quiz.multiSelect, options: display };
+  const result =
+    (await askInBrowser(view, (s) => settle(quiz, display, s))) ?? settle(quiz, display, await askInTerminal(quiz, display));
   // No structuredContent: Claude Code replaces the content blocks with its JSON, which drops the readable text and the log marker.
   return { content: [{ type: "text", text: formatResultText(result) }, { type: "text", text: encodeResult(result) }] };
 }
@@ -131,6 +141,7 @@ async function handle(msg: any) {
     case "notifications/initialized":
       return;
     case "notifications/cancelled":
+      cancelOpenQuizzes();
       for (const [pendingId, resolve] of pending) {
         resolve({ result: { action: "cancel" } });
         pending.delete(pendingId);
