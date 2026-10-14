@@ -55,7 +55,7 @@ test("tools/call grades a correct single-select answer", async (t) => {
   t.after(s.stop);
   const res = await s.call("tools/call", { name: "quiz", arguments: quizArgs });
   assert.equal(seen.mode, "form");
-  assert.equal(seen.message, "Was ist (1)/(2)?");
+  assert.equal(seen.message, "Was ist (1)/(2)?\n\n1. 0.5\n2. 2");
   assert.deepEqual(seen.requestedSchema.properties.answer.oneOf.map((o: any) => o.title), ["1. 0.5", "2. 2", "Ich weiß es nicht"]);
   assert.deepEqual(seen.requestedSchema.required, ["answer"]);
   const text = res.result.content.map((c: any) => c.text).join("\n");

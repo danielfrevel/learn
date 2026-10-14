@@ -94,7 +94,9 @@ async function runQuiz(args: unknown) {
   if (!v.ok) return { isError: true, content: [{ type: "text", text: `quiz: ${v.error}` }] };
   const quiz = v.quiz;
   const display = displayOrder(quiz);
-  const message = [plainMath(quiz.question), quiz.details ? plainMath(quiz.details) : ""].filter(Boolean).join("\n\n");
+  // Claude Code cuts select entries to one line, the message wraps, so the full option text lives here.
+  const optionLines = display.filter((o) => o.value !== DONT_KNOW_VALUE).map(plainTitle).join("\n");
+  const message = [plainMath(quiz.question), quiz.details ? plainMath(quiz.details) : "", optionLines].filter(Boolean).join("\n\n");
   const res = await request("elicitation/create", { mode: "form", message, requestedSchema: elicitationSchema(quiz, display) });
   const g = res?.result?.action === "accept" ? grade(display, selectedValues(display, res.result.content?.answer), quiz) : undefined;
   const result: QuizResult = {
