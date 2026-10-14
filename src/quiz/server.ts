@@ -55,6 +55,7 @@ function request(method: string, params: unknown): Promise<any> {
 }
 
 const HINT = "→ öffnet die Liste, ↑/↓ wählen, Enter bestätigt.";
+const plainTitle = (o: DisplayOption) => plainMath(optionTitle(o));
 
 function elicitationSchema(quiz: QuizInput, display: DisplayOption[]) {
   const answer = quiz.multiSelect
@@ -62,13 +63,13 @@ function elicitationSchema(quiz: QuizInput, display: DisplayOption[]) {
         type: "array",
         title: "Antwort (mehrere möglich)",
         description: HINT,
-        items: { type: "string", enum: display.map(optionTitle) },
+        items: { type: "string", enum: display.map(plainTitle) },
       }
     : {
         type: "string",
         title: "Antwort",
         description: HINT,
-        oneOf: display.map((o) => ({ const: o.value, title: optionTitle(o) })),
+        oneOf: display.map((o) => ({ const: o.value, title: plainTitle(o) })),
       };
   return {
     type: "object",
@@ -82,7 +83,7 @@ function elicitationSchema(quiz: QuizInput, display: DisplayOption[]) {
 
 function selectedValues(display: DisplayOption[], raw: unknown): string[] {
   const picks = Array.isArray(raw) ? raw : [raw];
-  const byTitle = new Map(display.map((o) => [optionTitle(o), o.value]));
+  const byTitle = new Map(display.map((o) => [plainTitle(o), o.value]));
   return picks
     .filter((p): p is string => typeof p === "string")
     .map((p) => byTitle.get(p) ?? p);

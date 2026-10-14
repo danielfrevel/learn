@@ -2,7 +2,7 @@ const SYMBOLS: Record<string, string> = {
   to: "→", infty: "∞", le: "≤", leq: "≤", ge: "≥", geq: "≥", ne: "≠", neq: "≠",
   cdot: "·", times: "×", pm: "±", in: "∈", notin: "∉", subset: "⊂", subseteq: "⊆",
   cup: "∪", cap: "∩", forall: "∀", exists: "∃", sum: "Σ", prod: "Π", int: "∫",
-  partial: "∂", nabla: "∇", rightarrow: "→", leftarrow: "←", Rightarrow: "⇒", Leftrightarrow: "⇔",
+  partial: "∂", nabla: "∇", rightarrow: "→", leftarrow: "←", Rightarrow: "⇒", Leftrightarrow: "⇔", implies: "⇒", iff: "⇔",
   alpha: "α", beta: "β", gamma: "γ", delta: "δ", epsilon: "ε", varepsilon: "ε", zeta: "ζ", eta: "η",
   theta: "θ", lambda: "λ", mu: "μ", nu: "ν", xi: "ξ", pi: "π", rho: "ρ", sigma: "σ", tau: "τ",
   phi: "φ", varphi: "φ", chi: "χ", psi: "ψ", omega: "ω",

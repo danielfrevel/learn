@@ -66,6 +66,19 @@ test("tools/call grades a correct single-select answer", async (t) => {
   assert.equal(res.result.structuredContent, undefined);
 });
 
+test("option titles reach the terminal as plain math and map back to values", async (t) => {
+  let seen: any;
+  const s = startServer((p) => {
+    seen = p;
+    return { action: "accept", content: { answer: ["1. x ∈ X"] } };
+  });
+  t.after(s.stop);
+  const args = { ...quizArgs, multiSelect: true, correctAnswer: ["half"], options: [{ label: "$x \\in X$", value: "half" }, { label: "$x \\le 2$", value: "two" }] };
+  const res = await s.call("tools/call", { name: "quiz", arguments: args });
+  assert.deepEqual(seen.requestedSchema.properties.answer.items.enum, ["1. x ∈ X", "2. x ≤ 2", "Ich weiß es nicht"]);
+  assert.equal(decodeResult(res.result.content.map((c: any) => c.text).join("\n"))!.outcome, "correct");
+});
+
 test("tools/call multi-select uses an array schema and exact-set grading", async (t) => {
   let seen: any;
   const s = startServer((p) => {
