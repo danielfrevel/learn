@@ -12,10 +12,10 @@ Der Quiz-Server zeigt die Frage in einer lokalen Browserseite mit KaTeX. Der Too
   - `GET /q/<token>`: HTML-Seite. Die Quizdaten stehen als JSON im Script-Tag und landen per `textContent` im DOM, KaTeX `auto-render` rendert `$...$` und `$$...$$`.
   - `POST /q/<token>`: `{ answers: string[], note?: string }` oder `{ cancel: true }`. Der Server bewertet und antwortet mit Ergebnis und Erklärung, die Seite zeigt beides.
   - `GET /katex/*`: Dateien aus `node_modules/katex/dist`.
-- Öffnen per `xdg-open <url>`, überschreibbar mit `LEARN_QUIZ_OPENER`. Startet der Opener nicht, fällt der Server auf das Terminal-Formular zurück.
+- Öffnen per `xdg-open <url>`, überschreibbar mit `LEARN_QUIZ_OPENER`. Fehlt `node_modules/katex` oder startet der Opener nicht, fällt der Server auf das Terminal-Formular zurück.
 - `notifications/cancelled` (Esc in Claude Code) beendet ein offenes Quiz als `cancelled`, die Seite meldet das beim Absenden.
 - Das Log rendert weiter aus dem Tool-Input, keine Änderung an `mdlog`.
 
 ## Tests
 
-`test/quiz/popup.test.ts`: Server mit einem Opener-Skript starten, das die Seite abruft und eine Antwort postet. Geprüft werden Bewertung, Tool-Ergebnis, `cancel` und unbekanntes Token (404).
+`test/quiz/server.test.ts`: Server mit dem Opener-Skript `test/fixtures/answer-quiz.mjs` starten, das die Seite abruft und eine Antwort postet. Geprüft werden Seite, KaTeX-Auslieferung, Bewertung, Tool-Ergebnis, `cancel` und ein zweiter POST (410).

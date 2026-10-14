@@ -117,9 +117,8 @@ async function runQuiz(args: unknown) {
   if (!v.ok) return { isError: true, content: [{ type: "text", text: `quiz: ${v.error}` }] };
   const quiz = v.quiz;
   const display = displayOrder(quiz);
-  const view = { question: quiz.question, details: quiz.details, multiSelect: quiz.multiSelect, options: display };
-  const result =
-    (await askInBrowser(view, (s) => settle(quiz, display, s))) ?? settle(quiz, display, await askInTerminal(quiz, display));
+  const finish = (s: Submission | undefined) => settle(quiz, display, s);
+  const result = (await askInBrowser({ ...quiz, options: display }, finish)) ?? finish(await askInTerminal(quiz, display));
   // No structuredContent: Claude Code replaces the content blocks with its JSON, which drops the readable text and the log marker.
   return { content: [{ type: "text", text: formatResultText(result) }, { type: "text", text: encodeResult(result) }] };
 }

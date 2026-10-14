@@ -1,15 +1,16 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { extname, resolve, sep } from "node:path";
+import { extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { QuizResult } from "./result.ts";
+import { DONT_KNOW_VALUE, optionTitle, type DisplayOption, type QuizInput } from "./grade.ts";
+import { formatResultText, type QuizResult } from "./result.ts";
 
-export interface PageOption { index: number; label: string; value: string; description?: string }
-export interface PageView { question: string; details?: string; multiSelect: boolean; options: PageOption[] }
-export interface Submission { answers: string[]; note?: string }
+export type PageView = Pick<QuizInput, "question" | "details" | "multiSelect"> & { options: DisplayOption[] };
+export interface Submission { answers: string[]; note?: unknown }
 type Settle = (submission: Submission | undefined) => QuizResult;
 
 const KATEX_DIR = fileURLToPath(new URL("../../node_modules/katex/dist/", import.meta.url));
@@ -17,11 +18,11 @@ const TYPES: Record<string, string> = {
   ".css": "text/css", ".js": "text/javascript", ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf",
 };
 
-const open = new Map<string, { view: PageView; settle: Settle; done: (r: QuizResult) => void }>();
+const open = new Map<string, { html: string; finish: Settle }>();
 let server: Promise<Server> | undefined;
 
-function send(res: ServerResponse, status: number, type: string, body: string | Buffer) {
-  res.writeHead(status, { "content-type": type, "cache-control": "no-store" });
+function send(res: ServerResponse, status: number, type: string, body: string | Buffer, cache = "no-store") {
+  res.writeHead(status, { "content-type": type, "cache-control": cache });
   res.end(body);
 }
 
@@ -37,9 +38,9 @@ async function readJson(req: IncomingMessage): Promise<any> {
 
 async function serveKatex(res: ServerResponse, rel: string) {
   const file = resolve(KATEX_DIR, rel);
-  if (!file.startsWith(KATEX_DIR.endsWith(sep) ? KATEX_DIR : KATEX_DIR + sep)) return send(res, 404, "text/plain", "not found");
+  if (!file.startsWith(KATEX_DIR)) return send(res, 404, "text/plain", "not found");
   try {
-    send(res, 200, TYPES[extname(file)] ?? "application/octet-stream", await readFile(file));
+    send(res, 200, TYPES[extname(file)] ?? "application/octet-stream", await readFile(file), "max-age=86400");
   } catch {
     send(res, 404, "text/plain", "not found");
   }
@@ -49,20 +50,16 @@ async function route(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   if (req.method === "GET" && url.pathname.startsWith("/katex/")) return serveKatex(res, url.pathname.slice("/katex/".length));
   const token = url.pathname.match(/^\/q\/([0-9a-f]{32})$/)?.[1];
-  const entry = token ? open.get(token) : undefined;
   if (!token) return send(res, 404, "text/plain", "not found");
-  if (req.method === "GET") {
-    return entry ? send(res, 200, "text/html; charset=utf-8", page(entry.view)) : send(res, 410, "text/html; charset=utf-8", GONE);
-  }
+  const entry = open.get(token);
+  if (req.method === "GET") return send(res, entry ? 200 : 410, "text/html; charset=utf-8", entry?.html ?? GONE);
   if (req.method !== "POST") return send(res, 405, "text/plain", "method not allowed");
   if (!entry) return send(res, 410, "application/json", JSON.stringify({ gone: true }));
   const body = await readJson(req);
   const answers = Array.isArray(body?.answers) ? body.answers.filter((a: unknown): a is string => typeof a === "string") : [];
-  const note = typeof body?.note === "string" ? body.note : undefined;
-  const result = entry.settle(body?.cancel === true ? undefined : { answers, note });
-  open.delete(token);
-  entry.done(result);
-  send(res, 200, "application/json", JSON.stringify(result));
+  const result = entry.finish(body?.cancel === true ? undefined : { answers, note: body?.note });
+  const correct = result.options.filter((o) => result.correctIndices.includes(o.index)).map((o) => o.value);
+  send(res, 200, "application/json", JSON.stringify({ outcome: result.outcome, correct, text: formatResultText(result) }));
 }
 
 function listen(): Promise<Server> {
@@ -89,9 +86,18 @@ function launch(url: string): Promise<boolean> {
 }
 
 export async function askInBrowser(view: PageView, settle: Settle): Promise<QuizResult | undefined> {
+  if (!existsSync(KATEX_DIR)) return undefined;
   const { port } = (await listen()).address() as AddressInfo;
   const token = randomBytes(16).toString("hex");
-  const answered = new Promise<QuizResult>((done) => open.set(token, { view, settle, done }));
+  const answered = new Promise<QuizResult>((done) => {
+    const finish = (s: Submission | undefined) => {
+      open.delete(token);
+      const result = settle(s);
+      done(result);
+      return result;
+    };
+    open.set(token, { html: page(view), finish });
+  });
   if (!(await launch(`http://127.0.0.1:${port}/q/${token}`))) {
     open.delete(token);
     return undefined;
@@ -100,16 +106,14 @@ export async function askInBrowser(view: PageView, settle: Settle): Promise<Quiz
 }
 
 export function cancelOpenQuizzes() {
-  for (const [token, entry] of open) {
-    open.delete(token);
-    entry.done(entry.settle(undefined));
-  }
+  for (const entry of [...open.values()]) entry.finish(undefined);
 }
 
 const GONE = `<!doctype html><meta charset="utf-8"><title>Quiz</title><p>Dieses Quiz ist beendet.</p>`;
 
 function page(view: PageView): string {
-  const data = JSON.stringify(view).replace(/</g, "\\u003c");
+  const options = view.options.map((o) => ({ value: o.value, title: optionTitle(o), description: o.description, dontKnow: o.value === DONT_KNOW_VALUE }));
+  const data = JSON.stringify({ ...view, options }).replace(/</g, "\\u003c");
   return `<!doctype html>
 <html lang="de">
 <head>
@@ -128,7 +132,6 @@ function page(view: PageView): string {
   label.opt:has(input:checked) { border-color: currentColor; }
   label.opt.correct { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 15%, transparent); }
   label.opt.wrong { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 15%, transparent); }
-  .num { font-weight: 600; min-width: 1.5rem; }
   .desc { display: block; font-size: .9em; opacity: .7; }
   .dontknow { opacity: .75; }
   textarea { width: 100%; box-sizing: border-box; min-height: 4rem; font: inherit; margin-top: .25rem; }
@@ -136,7 +139,7 @@ function page(view: PageView): string {
   button { font: inherit; padding: .5rem 1.1rem; border-radius: .4rem; border: 1px solid var(--line); cursor: pointer; }
   button[type=submit] { font-weight: 600; }
   #result { margin-top: 1.5rem; padding: 1rem; border-radius: .5rem; border: 1px solid var(--line); }
-  #result .head { font-weight: 600; }
+  #result p { white-space: pre-line; margin: 0; }
   .hint { opacity: .6; font-size: .9em; margin-top: 1rem; }
 </style>
 </head>
@@ -161,22 +164,23 @@ document.getElementById("question").textContent = view.question;
 if (view.details) { const d = document.getElementById("details"); d.textContent = view.details; d.hidden = false; }
 const box = document.getElementById("options");
 for (const o of view.options) {
-  const label = el("label", "opt" + (o.index === 0 ? " dontknow" : ""));
+  const label = el("label", "opt" + (o.dontKnow ? " dontknow" : ""));
   label.dataset.value = o.value;
   const input = el("input");
-  input.type = view.multiSelect && o.index !== 0 ? "checkbox" : "radio";
+  input.type = view.multiSelect && !o.dontKnow ? "checkbox" : "radio";
   input.name = "answer";
   input.value = o.value;
-  const text = el("span", "", o.label);
+  input.dataset.dontKnow = o.dontKnow;
+  const text = el("span", "", o.title);
   if (o.description) text.append(el("span", "desc", o.description));
-  label.append(input, el("span", "num", o.index === 0 ? "" : o.index + "."), text);
+  label.append(input, text);
   box.append(label);
 }
 box.addEventListener("change", (e) => {
   const picked = e.target;
   for (const i of box.querySelectorAll("input")) {
     if (i === picked) continue;
-    if (picked.value === "__dont_know__" || i.value === "__dont_know__" || !view.multiSelect) i.checked = false;
+    if (picked.dataset.dontKnow === "true" || i.dataset.dontKnow === "true" || !view.multiSelect) i.checked = false;
   }
 });
 const finish = (r) => {
@@ -185,14 +189,12 @@ const finish = (r) => {
   out.hidden = false;
   if (r.gone) { out.textContent = "Dieses Quiz ist nicht mehr offen."; return; }
   if (r.outcome === "cancelled") { out.textContent = "Abgebrochen. Zurück zum Terminal."; return; }
-  const correct = new Set(r.options.filter((o) => r.correctIndices.includes(o.index)).map((o) => o.value));
-  const chosen = new Set(r.answers.map((o) => o.value));
+  const correct = new Set(r.correct);
   for (const l of box.querySelectorAll("label.opt")) {
     if (correct.has(l.dataset.value)) l.classList.add("correct");
-    else if (chosen.has(l.dataset.value)) l.classList.add("wrong");
+    else if (l.querySelector("input").checked) l.classList.add("wrong");
   }
-  const head = { correct: "✓ Richtig", wrong: "✗ Falsch", dontKnow: "Weiß nicht" }[r.outcome];
-  out.append(el("div", "head", head), el("p", "", r.explanation), el("div", "hint", "Zurück zum Terminal, die Lektion geht dort weiter."));
+  out.append(el("p", "", r.text), el("div", "hint", "Zurück zum Terminal, die Lektion geht dort weiter."));
   math(out);
 };
 const submit = (body) => fetch(location.pathname, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })

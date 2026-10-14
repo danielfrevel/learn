@@ -124,7 +124,7 @@ const OPENER = fileURLToPath(new URL("../fixtures/answer-quiz.mjs", import.meta.
 async function answerInBrowser(t: any, answer: unknown) {
   const report = join(mkdtempSync(join(tmpdir(), "quiz-")), "report.json");
   const s = startServer(() => assert.fail("terminal form must not open"), {
-    LEARN_QUIZ_OPENER: OPENER, QUIZ_ANSWER: JSON.stringify(answer), QUIZ_EXPECT: "Was ist $\\\\frac{1}{2}$?", QUIZ_REPORT: report,
+    LEARN_QUIZ_OPENER: OPENER, QUIZ_ANSWER: JSON.stringify(answer), QUIZ_EXPECT: JSON.stringify(quizArgs.question).slice(1, -1), QUIZ_REPORT: report,
   });
   t.after(s.stop);
   const res = await s.call("tools/call", { name: "quiz", arguments: quizArgs });
@@ -137,6 +137,7 @@ test("browser quiz serves the page with LaTeX and KaTeX, grades the posted answe
   assert.equal(report.page, true);
   assert.equal(report.katex, 200);
   assert.equal(report.posted.outcome, "correct");
+  assert.deepEqual(report.posted.correct, ["half"]);
   assert.equal(report.again, 410);
   assert.match(text, /^✓ Richtig: 1\. 0\.5\nErklärung: Ein Halbes\.\nNotiz: sicher/);
 });
