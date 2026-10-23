@@ -71,7 +71,9 @@ function activate(id) {
   for (const [tid, t] of tabs) t.section.hidden = tid !== id;
   const tab = tabs.get(id).data;
   document.getElementById("pos").textContent = (ids.indexOf(id) + 1) + " / " + ids.length;
-  document.getElementById("title").textContent = tab.title;
+  const title = document.getElementById("title");
+  title.textContent = tab.title;
+  math(title);
   document.getElementById("prev").disabled = ids.indexOf(id) === 0;
   document.getElementById("next").disabled = ids.indexOf(id) === ids.length - 1;
   window.scrollTo(0, 0);
@@ -205,10 +207,13 @@ function applyState(list) {
   for (const t of list) render(t);
   activate(list.length ? list[list.length - 1].id : active);
 }
-const events = new EventSource(base + "/events");
-events.addEventListener("state", (e) => applyState(JSON.parse(e.data).tabs));
-events.addEventListener("tab", (e) => { const t = JSON.parse(e.data); render(t); activate(t.id); });
-events.addEventListener("update", (e) => { const t = JSON.parse(e.data); render(t); activate(active); });
+// The first state event arrives before the deferred KaTeX scripts have run, so connect only once the page has loaded.
+window.addEventListener("load", () => {
+  const events = new EventSource(base + "/events");
+  events.addEventListener("state", (e) => applyState(JSON.parse(e.data).tabs));
+  events.addEventListener("tab", (e) => { const t = JSON.parse(e.data); render(t); activate(t.id); });
+  events.addEventListener("update", (e) => { const t = JSON.parse(e.data); render(t); activate(active); });
+});
 </script>
 </body>
 </html>`;
