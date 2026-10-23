@@ -18,7 +18,9 @@ const TYPES: Record<string, string> = {
   ".css": "text/css", ".js": "text/javascript", ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf",
 };
 
-const open = new Map<string, { html: string; finish: Settle }>();
+const LOAD_TIMEOUT_MS = Number(process.env.LEARN_QUIZ_LOAD_TIMEOUT_MS) || 10_000;
+
+const open = new Map<string, { html: string; loaded: () => void; finish: Settle }>();
 let server: Promise<Server> | undefined;
 
 function send(res: ServerResponse, status: number, type: string, body: string | Buffer, cache = "no-store") {
@@ -47,12 +49,17 @@ async function serveKatex(res: ServerResponse, rel: string) {
 }
 
 async function route(req: IncomingMessage, res: ServerResponse) {
+  // Any other Host means a page from elsewhere reached this port via DNS rebinding.
+  if (req.headers.host !== `127.0.0.1:${req.socket.localPort}`) return send(res, 403, "text/plain", "forbidden");
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   if (req.method === "GET" && url.pathname.startsWith("/katex/")) return serveKatex(res, url.pathname.slice("/katex/".length));
   const token = url.pathname.match(/^\/q\/([0-9a-f]{32})$/)?.[1];
   if (!token) return send(res, 404, "text/plain", "not found");
   const entry = open.get(token);
-  if (req.method === "GET") return send(res, entry ? 200 : 410, "text/html; charset=utf-8", entry?.html ?? GONE);
+  if (req.method === "GET") {
+    entry?.loaded();
+    return send(res, entry ? 200 : 410, "text/html; charset=utf-8", entry?.html ?? GONE);
+  }
   if (req.method !== "POST") return send(res, 405, "text/plain", "method not allowed");
   if (!entry) return send(res, 410, "application/json", JSON.stringify({ gone: true }));
   const body = await readJson(req);
@@ -89,6 +96,11 @@ export async function askInBrowser(view: PageView, settle: Settle): Promise<Quiz
   if (!existsSync(KATEX_DIR)) return undefined;
   const { port } = (await listen()).address() as AddressInfo;
   const token = randomBytes(16).toString("hex");
+  let loaded = () => {};
+  const pageLoaded = new Promise<boolean>((ok) => {
+    loaded = () => ok(true);
+    setTimeout(() => ok(false), LOAD_TIMEOUT_MS).unref();
+  });
   const answered = new Promise<QuizResult>((done) => {
     const finish = (s: Submission | undefined) => {
       open.delete(token);
@@ -96,9 +108,11 @@ export async function askInBrowser(view: PageView, settle: Settle): Promise<Quiz
       done(result);
       return result;
     };
-    open.set(token, { html: page(view), finish });
+    open.set(token, { html: page(view), loaded, finish });
   });
-  if (!(await launch(`http://127.0.0.1:${port}/q/${token}`))) {
+  // xdg-open starts even without a display or browser, so only a page request proves the quiz is visible.
+  const shown = (await launch(`http://127.0.0.1:${port}/q/${token}`)) && (await Promise.race([pageLoaded, answered.then(() => true)]));
+  if (!shown) {
     open.delete(token);
     return undefined;
   }

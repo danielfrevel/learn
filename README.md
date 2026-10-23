@@ -47,7 +47,7 @@ claude
 Erklär mir Grenzwerte von Folgen.
 ```
 
-Open the vault in Obsidian and read the lesson there. A quiz opens in the browser with rendered LaTeX; the terminal waits for the answer. `LEARN_QUIZ_OPENER` replaces `xdg-open`. If no browser starts, the quiz falls back to the terminal form, where Claude Code cuts each option to one line.
+Open the vault in Obsidian and read the lesson there. A quiz opens in the browser with rendered LaTeX; the terminal waits for the answer. `LEARN_QUIZ_OPENER` replaces `xdg-open`. If no browser requests the page within 10 seconds, the quiz falls back to the terminal form, where Claude Code cuts each option to one line.
 
 ## Development
 
