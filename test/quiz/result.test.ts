@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decodeResult, encodeResult, formatResultText, type QuizResult } from "../../src/quiz/result.ts";
+import { decodeResult, decodeShow, encodeResult, encodeShow, formatResultText, formatShowText, type QuizResult, type ShowResult } from "../../src/quiz/result.ts";
 
 const base: QuizResult = {
   outcome: "wrong", question: "q", mode: "single-select",
@@ -31,4 +31,24 @@ test("encode and decode round-trip inside other text", () => {
   const text = "✗ Falsch\n" + encodeResult(base) + "\n";
   assert.deepEqual(decodeResult(text), base);
   assert.equal(decodeResult("nothing here"), undefined);
+});
+
+const options = base.options;
+
+test("formatResultText appends rating and feedback", () => {
+  const r: QuizResult = { ...base, outcome: "correct", answers: [options[0]], rating: 4, feedback: "mehr Beispiele" };
+  assert.equal(formatResultText(r), "✓ Richtig: 1. A\nErklärung: weil\nVerständnis: 4/5\nHilft mir: mehr Beispiele");
+});
+
+test("formatResultText without rating has no feedback lines", () => {
+  assert.equal(formatResultText({ ...base, outcome: "correct", answers: [options[0]] }), "✓ Richtig: 1. A\nErklärung: weil");
+});
+
+test("show result round-trips and formats", () => {
+  const r: ShowResult = { kind: "show", title: "Grenzwert", body: "Sei $\\epsilon > 0$.", rating: 5, cancelled: false };
+  assert.equal(formatShowText(r), "Verständnis: 5/5");
+  assert.deepEqual(decodeShow("x\n" + encodeShow(r)), r);
+  assert.equal(formatShowText({ kind: "show", title: "t", body: "b", cancelled: false }), "Gelesen, keine Rückmeldung.");
+  assert.equal(formatShowText({ kind: "show", title: "t", body: "b", cancelled: true }), "Abgebrochen, keine Rückmeldung.");
+  assert.equal(decodeShow(encodeResult(base)), undefined);
 });

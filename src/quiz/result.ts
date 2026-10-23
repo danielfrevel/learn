@@ -15,6 +15,24 @@ export interface QuizResult {
   correctIndices: number[];
   note?: string;
   explanation: string;
+  rating?: number;
+  feedback?: string;
+}
+
+export interface ShowResult {
+  kind: "show";
+  title: string;
+  body: string;
+  image?: string;
+  rating?: number;
+  feedback?: string;
+  cancelled: boolean;
+}
+
+export const SHOW_MARKER = "learn-show";
+
+export function formatFeedback(r: { rating?: number; feedback?: string }): string[] {
+  return [...(r.rating !== undefined ? [`Verständnis: ${r.rating}/5`] : []), ...(r.feedback ? [`Hilft mir: ${r.feedback}`] : [])];
 }
 
 export const toResultOption = ({ index, label, value }: ResultOption): ResultOption => ({ index, label, value });
@@ -28,24 +46,35 @@ export function formatResultText(r: QuizResult): string {
     wrong: [`✗ Falsch: ${chosen}`, `Richtig wäre: ${correct}`],
     dontKnow: ["Weiß nicht.", `Richtig wäre: ${correct}`],
   }[r.outcome];
-  return [...head, `Erklärung: ${r.explanation}`, ...(r.note ? [`Notiz: ${r.note}`] : [])].join("\n");
+  return [...head, `Erklärung: ${r.explanation}`, ...(r.note ? [`Notiz: ${r.note}`] : []), ...formatFeedback(r)].join("\n");
 }
 
-export function encodeResult(r: QuizResult): string {
-  return `<!--${RESULT_MARKER} ${JSON.stringify(r)}-->`;
+export function formatShowText(r: ShowResult): string {
+  const lines = formatFeedback(r);
+  if (lines.length) return lines.join("\n");
+  return r.cancelled ? "Abgebrochen, keine Rückmeldung." : "Gelesen, keine Rückmeldung.";
 }
 
-const MARKER_RE = new RegExp(`<!--${RESULT_MARKER} (\\{[\\s\\S]*?\\})-->`);
+const encode = (marker: string, r: unknown) => `<!--${marker} ${JSON.stringify(r)}-->`;
+export const encodeResult = (r: QuizResult) => encode(RESULT_MARKER, r);
+export const encodeShow = (r: ShowResult) => encode(SHOW_MARKER, r);
+
+const markerRe = (marker: string) => new RegExp(`<!--${marker} (\\{[\\s\\S]*?\\})-->`);
 const isResult = (v: unknown): v is QuizResult =>
   typeof v === "object" && v !== null && "outcome" in v && "options" in v && "correctIndices" in v;
+const isShow = (v: unknown): v is ShowResult =>
+  typeof v === "object" && v !== null && (v as ShowResult).kind === "show" && typeof (v as ShowResult).body === "string";
 
-export function decodeResult(text: string): QuizResult | undefined {
-  const m = text.match(MARKER_RE);
+function decode<T>(marker: string, text: string, guard: (v: unknown) => v is T): T | undefined {
+  const m = text.match(markerRe(marker));
   if (!m) return undefined;
   try {
     const parsed: unknown = JSON.parse(m[1]);
-    return isResult(parsed) ? parsed : undefined;
+    return guard(parsed) ? parsed : undefined;
   } catch {
     return undefined;
   }
 }
+
+export const decodeResult = (text: string) => decode(RESULT_MARKER, text, isResult);
+export const decodeShow = (text: string) => decode(SHOW_MARKER, text, isShow);
