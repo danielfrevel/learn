@@ -29,7 +29,16 @@ function startServer(onElicit: (params: any) => unknown, env: Record<string, str
       child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: my, method, params }) + "\n");
     });
   const notify = (method: string, params: unknown = {}) => child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method, params }) + "\n");
-  return { call, notify, stop: () => child.kill() };
+  const end = () =>
+    new Promise<number | null>((resolve) => {
+      const timer = setTimeout(() => assert.fail("server did not exit after stdin closed"), 2000);
+      child.once("exit", (code) => {
+        clearTimeout(timer);
+        resolve(code);
+      });
+      child.stdin.end();
+    });
+  return { call, notify, end, stop: () => child.kill() };
 }
 
 const quizArgs = {
@@ -120,7 +129,7 @@ test("tools/call with invalid input returns isError without eliciting", async (t
   assert.equal(elicited, false);
 });
 
-const OPENER = fileURLToPath(new URL("../fixtures/answer-quiz.mjs", import.meta.url));
+const OPENER = fileURLToPath(new URL("../fixtures/lesson-browser.mjs", import.meta.url));
 
 const resultText = (res: any) => res.result.content.map((c: any) => c.text).join("\n");
 
@@ -133,46 +142,66 @@ async function waitForFile(path: string) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
-function browserServer(t: TestContext, answer?: unknown) {
+function browserServer(t: TestContext, script: unknown[], env: Record<string, string> = {}) {
   const report = join(mkdtempSync(join(tmpdir(), "quiz-")), "report.json");
-  const s = startServer(() => assert.fail("terminal form must not open"), {
-    LEARN_QUIZ_OPENER: OPENER,
-    QUIZ_EXPECT: JSON.stringify(quizArgs.question).slice(1, -1),
-    QUIZ_REPORT: report,
-    ...(answer ? { QUIZ_ANSWER: JSON.stringify(answer) } : {}),
-  });
+  const s = startServer(() => assert.fail("terminal form must not open"), { LEARN_QUIZ_OPENER: OPENER, QUIZ_SCRIPT: JSON.stringify(script), QUIZ_REPORT: report, ...env });
   t.after(s.stop);
-  return { ...s, report: () => waitForFile(report) };
+  const opened = () => (existsSync(report + ".opened") ? readFileSync(report + ".opened", "utf8").split("\n").filter(Boolean).length : 0);
+  return { ...s, report: () => waitForFile(report), opened };
 }
 
-test("browser quiz serves the page and KaTeX, rejects foreign hosts, grades the posted answer", async (t) => {
-  const s = browserServer(t, { answers: ["half"], note: "sicher" });
-  const text = resultText(await s.call("tools/call", { name: "quiz", arguments: quizArgs }));
+test("browser: two quiz tabs on one page, intro rendered, rating in the result", async (t) => {
+  const s = browserServer(t, [
+    { answer: { answers: ["half"], note: "sicher" }, finish: { rating: 4, feedback: "mehr Beispiele" } },
+    { answer: { answers: ["two"] }, finish: { rating: 2 } },
+  ]);
+  const first = resultText(await s.call("tools/call", { name: "quiz", arguments: { ...quizArgs, intro: "Sei $a_1$ **fett**." } }));
+  assert.match(first, /^✓ Richtig: 1\. 0\.5\nErklärung: Ein Halbes\.\nNotiz: sicher\nVerständnis: 4\/5\nHilft mir: mehr Beispiele/);
+  const second = resultText(await s.call("tools/call", { name: "quiz", arguments: quizArgs }));
+  assert.match(second, /^✗ Falsch: 2\. 2\nRichtig wäre: 1\. 0\.5\nErklärung: Ein Halbes\.\nVerständnis: 2\/5$/m);
   const report = await s.report();
   assert.equal(report.page, true);
   assert.deepEqual(report.katex, [200, 200, 200]);
   assert.equal(report.foreignHost, 403);
-  assert.equal(report.posted.outcome, "correct");
-  assert.deepEqual(report.posted.correct, ["half"]);
-  assert.equal(report.again, 410);
-  assert.match(text, /^✓ Richtig: 1\. 0\.5\nErklärung: Ein Halbes\.\nNotiz: sicher/);
+  assert.equal(report.stateHasSecret, false);
+  assert.equal(report.tabs.length, 2);
+  assert.equal(report.tabs[0].introHtml, "<p>Sei $a_1$ <strong>fett</strong>.</p>\n");
+  assert.equal(report.tabs[0].answered.outcome, "correct");
+  assert.equal(report.tabs[0].finished, 200);
+  assert.equal(report.tabs[1].id, 2);
+  assert.equal(s.opened(), 1);
 });
 
-test("browser quiz cancel ends the tool call without grading", async (t) => {
-  const s = browserServer(t, { cancel: true });
-  const text = resultText(await s.call("tools/call", { name: "quiz", arguments: quizArgs }));
-  assert.equal(decodeResult(text)!.outcome, "cancelled");
+test("browser: cancel after answering keeps the grade, cancel before answering does not", async (t) => {
+  const s = browserServer(t, [
+    { answer: { answers: ["half"] }, finish: { cancel: true } },
+    { answer: { cancel: true } },
+  ]);
+  const a = decodeResult(resultText(await s.call("tools/call", { name: "quiz", arguments: quizArgs })))!;
+  assert.equal(a.outcome, "correct");
+  assert.equal(a.rating, undefined);
+  const b = decodeResult(resultText(await s.call("tools/call", { name: "quiz", arguments: quizArgs })))!;
+  assert.equal(b.outcome, "cancelled");
 });
 
-test("notifications/cancelled ends an open browser quiz", async (t) => {
-  const s = browserServer(t);
+test("browser: invalid rating is rejected and the tab stays open", async (t) => {
+  const s = browserServer(t, [{ answer: { answers: ["half"] }, finish: { rating: 0 } }]);
+  const pending = s.call("tools/call", { name: "quiz", arguments: quizArgs });
+  const report = await s.report();
+  assert.equal(report.tabs[0].finished, 400);
+  s.notify("notifications/cancelled", { requestId: 1 });
+  assert.equal(decodeResult(resultText(await pending))!.outcome, "correct");
+});
+
+test("notifications/cancelled ends an open browser tab", async (t) => {
+  const s = browserServer(t, [{}]);
   const pending = s.call("tools/call", { name: "quiz", arguments: quizArgs });
   await s.report();
   s.notify("notifications/cancelled", { requestId: 1 });
   assert.equal(decodeResult(resultText(await pending))!.outcome, "cancelled");
 });
 
-test("falls back to the terminal form when no browser requests the page", async (t) => {
+test("falls back to the terminal form when no browser connects", async (t) => {
   let elicited = false;
   const s = startServer(() => {
     elicited = true;
@@ -182,4 +211,12 @@ test("falls back to the terminal form when no browser requests the page", async 
   const text = resultText(await s.call("tools/call", { name: "quiz", arguments: quizArgs }));
   assert.equal(elicited, true);
   assert.equal(decodeResult(text)!.outcome, "correct");
+});
+
+test("server exits when stdin closes even with an open event stream", async (t) => {
+  const s = browserServer(t, [{}], { QUIZ_STAY: "1" });
+  const pending = s.call("tools/call", { name: "quiz", arguments: quizArgs });
+  await s.report();
+  assert.equal(await s.end(), 0);
+  void pending;
 });

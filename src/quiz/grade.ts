@@ -4,6 +4,7 @@ export const DONT_KNOW_LABEL = "Ich weiß es nicht";
 export interface QuizOption { label: string; value: string; description?: string }
 export interface DisplayOption extends QuizOption { index: number }
 export interface QuizInput {
+  intro?: string;
   question: string;
   details?: string;
   options: QuizOption[];
@@ -59,6 +60,7 @@ export function validateInput(raw: unknown): Validation {
   return {
     ok: true,
     quiz: {
+      intro: str(r.intro),
       question,
       details: str(r.details),
       options,

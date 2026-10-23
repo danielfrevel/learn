@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline";
 import { DONT_KNOW_VALUE, displayOrder, grade, optionTitle, str, validateInput, type DisplayOption, type QuizInput } from "./grade.ts";
 import { plainMath } from "./plainmath.ts";
-import { askInBrowser, cancelOpenQuizzes, type Submission } from "./popup.ts";
+import { askInBrowser, cancelOpenTabs, type Submission } from "./popup.ts";
 import { encodeResult, formatResultText, toResultOption, type QuizResult } from "./result.ts";
 
 const TOOL = {
@@ -11,11 +11,13 @@ const TOOL = {
     "Options only, no free text. Give each option a stable `value` and reference the correct one(s) by value in `correctAnswer`.",
     "An 'Ich weiß es nicht' option is always added; it is neither right nor wrong.",
     "Options are shuffled by default; set `shuffle: false` when order carries meaning (ordered numbers, 'all of the above').",
-    "Write math as LaTeX ($...$); the log renders it. Keep options parallel: same length, same grain, no justification in any option.",
+    "Write math as LaTeX ($...$); the page renders it. Keep options parallel: same length, same grain, no justification in any option.",
+    "The learner rates their understanding 1-5 after answering and may write what would help; decide the next step from that, the note and how deep you already are in the topic.",
   ].join(" "),
   inputSchema: {
     type: "object",
     properties: {
+      intro: { type: "string", description: "Markdown with LaTeX shown above the question: resolution of the previous question, derivation, transition. All teaching prose goes here or into show." },
       question: { type: "string", description: "The single quiz question." },
       details: { type: "string", description: "Optional context shown under the question." },
       options: {
@@ -106,7 +108,7 @@ function settle(quiz: QuizInput, display: DisplayOption[], submission: Submissio
 }
 
 async function askInTerminal(quiz: QuizInput, display: DisplayOption[]): Promise<Submission | undefined> {
-  const message = [plainMath(quiz.question), quiz.details ? plainMath(quiz.details) : ""].filter(Boolean).join("\n\n");
+  const message = [quiz.intro ?? "", quiz.question, quiz.details ?? ""].filter(Boolean).map(plainMath).join("\n\n");
   const res = await request("elicitation/create", { mode: "form", message, requestedSchema: elicitationSchema(quiz, display) });
   if (res?.result?.action !== "accept") return undefined;
   return { answers: selectedValues(display, res.result.content?.answer), note: res.result.content?.note };
@@ -118,7 +120,10 @@ async function runQuiz(args: unknown) {
   const quiz = v.quiz;
   const display = displayOrder(quiz);
   const finish = (s: Submission | undefined) => settle(quiz, display, s);
-  const result = (await askInBrowser({ ...quiz, options: display }, finish)) ?? finish(await askInTerminal(quiz, display));
+  const outcome = await askInBrowser({ question: quiz.question, details: quiz.details, multiSelect: quiz.multiSelect, options: display }, quiz.intro, finish);
+  const result: QuizResult = outcome?.result
+    ? { ...outcome.result, rating: outcome.rating, feedback: outcome.feedback }
+    : finish(await askInTerminal(quiz, display));
   // No structuredContent: Claude Code replaces the content blocks with its JSON, which drops the readable text and the log marker.
   return { content: [{ type: "text", text: formatResultText(result) }, { type: "text", text: encodeResult(result) }] };
 }
@@ -140,7 +145,7 @@ async function handle(msg: any) {
     case "notifications/initialized":
       return;
     case "notifications/cancelled":
-      cancelOpenQuizzes();
+      cancelOpenTabs();
       for (const [pendingId, resolve] of pending) {
         resolve({ result: { action: "cancel" } });
         pending.delete(pendingId);
@@ -158,11 +163,13 @@ async function handle(msg: any) {
   }
 }
 
-createInterface({ input: process.stdin }).on("line", (line) => {
-  if (!line.trim()) return;
-  try {
-    void handle(JSON.parse(line));
-  } catch (err) {
-    process.stderr.write(`learn-quiz: ${String(err)}\n`);
-  }
-});
+createInterface({ input: process.stdin })
+  .on("line", (line) => {
+    if (!line.trim()) return;
+    try {
+      void handle(JSON.parse(line));
+    } catch (err) {
+      process.stderr.write(`learn-quiz: ${String(err)}\n`);
+    }
+  })
+  .on("close", () => process.exit(0));
