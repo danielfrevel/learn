@@ -1,8 +1,10 @@
 import { displayOrder, optionTitle, validateInput } from "../quiz/grade.ts";
-import { decodeResult, formatResultText, type Outcome } from "../quiz/result.ts";
+import { decodeResult, decodeShow, formatResultText, formatShowText, type Outcome } from "../quiz/result.ts";
+import { validateShow } from "../quiz/show.ts";
 import type { Event } from "./transcript.ts";
 
 export const QUIZ_TOOL = /^mcp__.*quiz__quiz$/;
+export const SHOW_TOOL = /^mcp__.*quiz__show$/;
 export const ASK_TOOL = "AskUserQuestion";
 
 const quote = (lines: string[]) => lines.flatMap((l) => l.split("\n")).map((l) => (l ? `> ${l}` : ">")).join("\n");
@@ -26,7 +28,14 @@ function quizQuestion(input: unknown): string | undefined {
   if (!v.ok) return undefined;
   const body = [v.quiz.question, ...(v.quiz.details ? [v.quiz.details] : []), ""];
   for (const o of displayOrder(v.quiz)) body.push(optionLine(optionTitle(o), o.description));
-  return callout("question", "Quiz", body);
+  const block = callout("question", "Quiz", body);
+  return v.quiz.intro ? `${v.quiz.intro}\n\n${block}` : block;
+}
+
+function showBlock(input: unknown): string | undefined {
+  const v = validateShow(input);
+  if (!v.ok) return undefined;
+  return v.show.image ? `${v.show.body}\n\n![[${v.show.image}|500]]` : v.show.body;
 }
 
 function askQuestion(input: any): string {
@@ -40,6 +49,7 @@ function askQuestion(input: any): string {
 
 export function questionBlock(name: string, input: unknown): string | undefined {
   if (QUIZ_TOOL.test(name)) return quizQuestion(input);
+  if (SHOW_TOOL.test(name)) return showBlock(input);
   if (name === ASK_TOOL) return askQuestion(input);
   return undefined;
 }
@@ -52,6 +62,8 @@ function resultBlock(e: Extract<Event, { kind: "tool_result" }>): string | undef
     const body = Object.entries(answers).map(([q, a]) => `${q} → ${Array.isArray(a) ? a.join(", ") : String(a)}`);
     return callout("info", "Antwort", body);
   }
+  const show = decodeShow(e.text);
+  if (show) return show.rating !== undefined || show.feedback ? callout("info", "Rückmeldung", formatShowText(show).split("\n")) : undefined;
   const r = decodeResult(e.text);
   if (!r) return undefined;
   const [head, ...rest] = formatResultText(r).split("\n");

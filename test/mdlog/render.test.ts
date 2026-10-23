@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseTranscript } from "../../src/mdlog/transcript.ts";
 import { questionBlock, renderEvents } from "../../src/mdlog/render.ts";
-import { encodeResult } from "../../src/quiz/result.ts";
+import { encodeResult, encodeShow } from "../../src/quiz/result.ts";
 
 const FIXTURE = fileURLToPath(new URL("../fixtures/transcript.jsonl", import.meta.url));
 const { events } = parseTranscript(readFileSync(FIXTURE), 0);
@@ -85,4 +85,30 @@ test("an invalid quiz call renders no question block", () => {
 test("tool results of other tools render nothing", () => {
   const blocks = renderEvents([{ kind: "tool_use", id: "x", name: "Bash", input: {} }, { kind: "tool_result", toolUseId: "x", text: "ls output", toolUseResult: undefined }], new Set());
   assert.deepEqual(blocks, []);
+});
+
+const opts = [{ index: 1, label: "A", value: "a" }, { index: 2, label: "B", value: "b" }];
+
+test("quiz intro renders as prose before the question callout", () => {
+  const b = questionBlock("mcp__plugin_learn_quiz__quiz", { question: "q", options: [{ label: "A" }, { label: "B" }], correctAnswer: "A", explanation: "e", shuffle: false, intro: "Sei $x$." });
+  assert.ok(b!.startsWith("Sei $x$.\n\n> [!question] Quiz"), b);
+});
+
+test("show renders body and image embed", () => {
+  assert.equal(questionBlock("mcp__plugin_learn_quiz__show", { title: "t", body: "Text", image: "viz-a.png" }), "Text\n\n![[viz-a.png|500]]");
+  assert.equal(questionBlock("mcp__plugin_learn_quiz__show", { title: "t", body: "Text" }), "Text");
+});
+
+test("show result renders a feedback callout only when rated", () => {
+  const rated = encodeShow({ kind: "show", title: "t", body: "b", rating: 4, feedback: "mehr", cancelled: false });
+  const blocks = renderEvents([{ kind: "tool_result", toolUseId: "x", text: rated, toolUseResult: undefined }], new Set());
+  assert.deepEqual(blocks, ["> [!info] Rückmeldung\n> Verständnis: 4/5\n> Hilft mir: mehr"]);
+  const unrated = encodeShow({ kind: "show", title: "t", body: "b", cancelled: false });
+  assert.deepEqual(renderEvents([{ kind: "tool_result", toolUseId: "x", text: unrated, toolUseResult: undefined }], new Set()), []);
+});
+
+test("quiz result carries rating lines", () => {
+  const text = encodeResult({ outcome: "correct", question: "q", mode: "single-select", options: opts, answers: [opts[0]], correctIndices: [1], explanation: "e", rating: 5 });
+  const [b] = renderEvents([{ kind: "tool_result", toolUseId: "x", text, toolUseResult: undefined }], new Set());
+  assert.ok(b.endsWith("> Verständnis: 5/5"), b);
 });
