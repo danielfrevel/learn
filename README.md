@@ -7,7 +7,7 @@ Claude Code port of [amosblomqvist/learn](https://github.com/amosblomqvist/learn
 - `skills/teach`: the philosophy and the process
 - `skills/visualize`: one correct, minimal diagram per idea, verified by the maker before you see it
 - `skills/md-log`, `skills/md-unlog`: mirror the session into a markdown file for Obsidian
-- `src/quiz`: MCP server with the `quiz` tool. Graded in the server, dialog via MCP elicitation
+- `src/quiz`: MCP server with the lesson page. `quiz` poses a graded question, `show` a text tab; both end with the learner's understanding rating and note
 - `src/mdlog`: hook-driven transcript renderer
 - `bin/render-mermaid`, `bin/render-svg`: render scripts for the maker agents
 - `agents/`: `researcher`, `mermaid-maker`, `svg-maker`
@@ -47,7 +47,9 @@ claude
 Erklär mir Grenzwerte von Folgen.
 ```
 
-Open the vault in Obsidian and read the lesson there. A quiz opens in the browser with rendered LaTeX; the terminal waits for the answer. `LEARN_QUIZ_OPENER` replaces `xdg-open`. If no browser requests the page within 10 seconds, the quiz falls back to the terminal form, where Claude Code cuts each option to one line.
+The first explanation or question opens the lesson page in the browser. Every further one appears there as a new tab; the arrows at the top and the arrow keys switch between tabs. Each tab ends with a rating from 1 to 5 and an optional note on what would help, and the terminal waits until you press "Weiter". The teacher decides from the rating, the note and how far the topic has come whether the next tab is another exercise, a picture, more text or the next node. `LEARN_QUIZ_OPENER` replaces `xdg-open`. If no browser connects within 10 seconds, that one call falls back to the terminal: a quiz as a form where Claude Code cuts each option to one line, a text tab as plain text.
+
+The Obsidian log is optional and manual: run `/learn:md-log lessons/<date>-<topic>.md` in the session, then open the vault in Obsidian. Without that command there is no log file.
 
 ## Development
 
@@ -55,6 +57,7 @@ Open the vault in Obsidian and read the lesson there. A quiz opens in the browse
 
 ## Open todos
 
+- `/learn:md-log` is a manual step per session. The lesson page does not persist beyond the MCP server process, so without the log a closed session is gone.
 - `learn-init` lists only top-level `*.pdf` and `*.md` as lecture material. PDFs in subfolders go into `CLAUDE.md` by hand.
 - The output style relies on `force-for-plugin`. If a session answers in terse mode, run `/output-style learn`.
 - Maker agents have unrestricted `Bash`; only the prompt limits them to `render-mermaid` / `render-svg`.

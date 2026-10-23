@@ -8,7 +8,8 @@ description: Teach the learner anything so it locks in and is understood, not me
 ## Language and tools
 
 - Teach in **German**. Use the terminology of the learner's lecture notes; give the English term in parentheses the first time it helps. Full sentences, normal prose; this is teaching, not a terse status report.
-- Graded questions: the `quiz` MCP tool (`mcp__plugin_learn_quiz__quiz`). Preference or direction questions: `AskUserQuestion`.
+- Graded questions: the `quiz` MCP tool (`mcp__plugin_learn_quiz__quiz`). Text the learner reads: the `show` MCP tool (`mcp__plugin_learn_quiz__show`) or the `intro` of a `quiz`. Preference or direction questions: `AskUserQuestion`.
+- The learner reads on the lesson page in the browser, never in the terminal. Every explanation, derivation, definition, summary and plan goes through `show` or a quiz `intro`. Your terminal reply is one line, such as "Weiter im Browser."
 - Research and fact checks: `Agent` with `subagent_type: "learn:researcher"`. If the project's CLAUDE.md lists lecture material, pass those paths in the brief so the researcher reads them first.
 - Visuals: the `visualize` skill.
 - If the learner has not linked a log yet, suggest `/learn:md-log lessons/<date>-<topic>.md` once at the start, then move on.
@@ -97,6 +98,7 @@ You can't teach into their zone of proximal development without knowing where it
 
 **The edge is only located when it's bracketed.** For each relevant strand you need *both*: something at that level they get **right** (a floor — proof they know at least this much) and something they get **wrong** or genuinely doesn't know (a ceiling — where it runs out). The edge sits between them. One side alone tells you almost nothing.
 
+- **The learner's note counts here too.** Every tab ends with a rating and an optional note ("Was würde dir helfen?"). A right answer still lets you jump a level up, but a note like "geraten" or "unsicher bei Schritt 2" overrides that: probe where the note points before you jump.
 - **All-correct is not "done" — it means the questions were too easy.** A run of right answers gives you a floor with no ceiling: you've proven they know *at least* this much and learned nothing about where their knowledge ends. Do not advance. Escalate — go harder until something finally breaks. If they never miss, you never found the edge.
 - **Binary-search the edge.** When they nail a question, jump the difficulty up *sharply* — don't inch forward. When they miss, you've bracketed the edge from above; narrow back in to pin exactly where it sits. This finds the frontier fast, without a hundred timid questions.
 - **One wrong answer is not "done" either — and it is *not* a cue to start teaching.** A single miss is one coordinate, and you don't yet know its kind: a careless slip, a narrow isolated gap, or a systematic misconception. Probe *around* it to characterize it before concluding anything. Misconceptions matter most — a confidently-held wrong model has to be dislodged, not merely topped up — so when you catch one, dig into its extent rather than moving on.
@@ -118,14 +120,14 @@ This is the highest-leverage step; don't rush it. With their level and their goa
 
 A good plan is what makes the teaching feel inevitable instead of arbitrary.
 
-**Then present the plan in chat — always, before any teaching.** Two parts:
+**Then present the plan in a `show` tab — always, before any teaching.** Two parts:
 
 1. **The approach, in prose.** What we'll cover, in what order, and why this way — given where their edge sits (Phase 1a) and what they're reaching for (Phase 1b). A few freeform sentences.
-2. **The dependency map.** The plan's backbone as a DAG: unconditional truths at the roots, each derived node hanging off what it depends on, their goal as the sink. Draw it as a small ```mermaid``` graph (Obsidian renders mermaid natively in the log). This map *is* the teaching order — Phase 3 builds it node by node. Keep it small: few nodes, short labels — a map, not the territory.
+2. **The dependency map.** The plan's backbone as a DAG: unconditional truths at the roots, each derived node hanging off what it depends on, their goal as the sink. Have the `mermaid-maker` draw it (see the `visualize` skill) and pass the returned file name as the `image` of the plan's `show` tab. This map *is* the teaching order — Phase 3 builds it node by node. Keep it small: few nodes, short labels — a map, not the territory.
 
 **Stress-test the roots before presenting.** For every node you're treating as foundational, ask: is this genuinely an unconditional truth *for the learner*, or a disguised theorem that itself derives from something simpler they'd accept at face value? If it derives, push it down and extend the map — never found the lesson on a mid-level fact. A wrong root corrupts everything hung off it, and roots are far easier to audit in a drawn map than mid-flow.
 
-**Then stop and wait for their go-ahead.** The presented plan is their checkpoint: a wrong root or wrong scope is cheap to fix now, expensive mid-lesson. Do not begin Phase 3 until they okay the plan.
+**Then stop and wait for their go-ahead.** The presented plan is their checkpoint: a wrong root or wrong scope is cheap to fix now, expensive mid-lesson. The rating on the plan tab is not the go-ahead; ask for it with `AskUserQuestion` in the terminal. Do not begin Phase 3 until they okay the plan.
 
 ### Phase 3 — Teach (the loop)
 
@@ -138,15 +140,25 @@ For **every node** (each unconditional truth *and* each non-trivial reasoning st
    - If it's a foundational unconditional truth: state it plainly, at face value, no caveats. Surface an atomic unit if one fits.
    - If it's a derived step: build it up from what's already established via a motivated move (Socratic or expository), answering "how could I have discovered this?" When a Socratic step has a gradable right/wrong answer, pose it with `quiz` even though they're "attempting the discovery" — gradable-and-Socratic is normal, not a contradiction; only fall back to `AskUserQuestion` if there's genuinely no right answer.
 3. **Connect.** Make the dependency edge explicit — show exactly how this new node hangs off the ones already in place, so it's understood, not memorized.
-4. **Quiz-check.** Confirm the node actually landed with a quick `quiz` — this applies to foundations just as much as derived steps. An unconfirmed unconditional truth is exactly as dangerous as an unconfirmed derived fact: if they miss it, that node isn't solid, so stop and fix it before building anything on top of it.
+4. **Quiz-check.** Confirm the node actually landed with a quick `quiz` — this applies to foundations just as much as derived steps. When the previous answer was wrong, the `intro` of the next quiz carries its resolution: why the chosen option fails, why the right one holds. An unconfirmed unconditional truth is exactly as dangerous as an unconfirmed derived fact: if they miss it, that node isn't solid, so stop and fix it before building anything on top of it.
 
 Repeat this full loop per node — don't front-load all the foundations once at the start and then stop checking. Any time a new unconditional truth is needed mid-session, it goes through motivate → establish → connect → quiz-check just like a derived step would.
 
 If you catch yourself asserting a fact they'd have to take on faith — foundational or not — stop: either motivate it and confirm it lands, or ground it in something already established. Unmotivated, unconfirmed facts don't lock in — that's the whole point.
 
+### After every tab — deciding what comes next
+
+Every `quiz` and every `show` returns the learner's understanding rating (1–5) and, if they wrote one, their note. Decide the next tab from three things together: the rating, the note, and how deep you already are in this node (how many examples and angles it has had). None of these is a hard threshold.
+
+- **The note wins.** If they wrote what would help, do that first: another example, a picture, a slower derivation, a different framing.
+- **A right answer alone is never a reason to move on.** Give every node several examples with a different surface: other numbers, another wording, the question turned around, a case where the obvious move fails. The learner asked for this explicitly: more questions and more examples, even similar ones, to pin down the understanding.
+- **Low rating or wrong answer:** stay on the node. Change the angle, not just the numbers.
+- **High rating, right answers, several angles done:** move to the next node.
+- **Unsure which:** ask in the terminal with `AskUserQuestion`, options "Noch eine Aufgabe", "Visualisierung", "Mehr Text", "Nächster Knoten".
+
 ## Formatting — math renders as LaTeX
 
-Everything written in a session is rendered to the learner through Obsidian, which renders LaTeX natively. So whenever math notation is involved — explanations, questions, quiz options and explanations, anything — write it in LaTeX instead of plain-text approximations:
+Everything the learner reads is rendered on the lesson page (KaTeX) and in the Obsidian log, both of which render LaTeX. So whenever math notation is involved — explanations, questions, quiz options and explanations, anything — write it in LaTeX instead of plain-text approximations:
 
 - Inline math: `$f(x)$`
 - Centered display math: `$$` fenced on its own lines, e.g. `$$\n f(x) \n$$`

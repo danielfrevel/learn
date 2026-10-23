@@ -1,13 +1,13 @@
 ---
 name: visualize
-description: "Add a correct, minimal visual to a lesson — a diagram or geometric picture — that renders inline in the Obsidian log. Use when an idea is genuinely clearer as a picture: a dependency graph, system/flow, sequence, state machine, tree, comparison, or a spatial/geometric thing (coordinate geometry, number line, vectors, a plot, a physical layout). Outsources authoring+rendering to a maker subagent that verifies the image by looking at it, then you embed the returned file."
+description: "Add a correct, minimal visual to a lesson — a diagram or geometric picture — that renders on the lesson page and in the Obsidian log. Use when an idea is genuinely clearer as a picture: a dependency graph, system/flow, sequence, state machine, tree, comparison, or a spatial/geometric thing (coordinate geometry, number line, vectors, a plot, a physical layout). Outsources authoring+rendering to a maker subagent that verifies the image by looking at it, then you embed the returned file."
 ---
 
 # Visualize
 
-A picture earns its place only when it shows something words can't — shape, structure, direction, relationship, geometry. This skill produces ONE such picture, guarantees it is **correct** (the maker renders it and looks at it before returning), and drops it into the lesson so it renders inline in the Obsidian `md-log` file.
+A picture earns its place only when it shows something words can't — shape, structure, direction, relationship, geometry. This skill produces ONE such picture, guarantees it is **correct** (the maker renders it and looks at it before returning), and drops it into the lesson as the image of a `show` tab.
 
-You are the **creative director**. You decide the exact idea and distill it to its fewest carrying elements. A **maker subagent** does the authoring, rendering, visual verification, and saving, then returns a filename. You embed that filename in your reply.
+You are the **creative director**. You decide the exact idea and distill it to its fewest carrying elements. A **maker subagent** does the authoring, rendering, visual verification, and saving, then returns a filename. You pass that filename to `show`.
 
 ## When to visualize (and when not to)
 
@@ -59,20 +59,20 @@ path: <cwd>/viz/viz-<slug>-<timestamp>.png
 
 If it returns `RESULT: NONE`, it couldn't make a correct picture of the brief — simplify or rethink, or decide the visual isn't worth it. Never hand-author or fake a diagram yourself; correctness depends on the maker's render-and-inspect loop.
 
-## Embed it in the lesson
+## Show it in the lesson
 
-Put the embed directly in your teaching reply, using Obsidian's wikilink embed with the returned **filename** (not the full path) and a display width:
+Call `show` with the returned **filename** (not the full path) as `image` and the sentence that introduces the picture as `body`:
 
 ```
-![[viz-<slug>-<timestamp>.png|500]]
+show(title: "<short title>", body: "<one or two sentences that say what to look for>", image: "viz-<slug>-<timestamp>.png")
 ```
 
-That's all. The `md-log` extension mirrors your reply text verbatim into the linked `.md`, and Obsidian resolves the embed by filename anywhere in the vault (the maker saves into the project's `viz` folder, which is inside the vault) — so it renders inline in the lesson automatically. Width `|500` is a good default; use larger for dense diagrams. Introduce the visual in a sentence, then let it carry the idea — don't narrate every element back in prose.
+The page shows the picture under the text, and the log renderer writes the Obsidian embed (`![[viz-<slug>-<timestamp>.png|500]]`) for you. Introduce the visual in a sentence, then let it carry the idea — don't narrate every element back in prose.
 
 ## Why this is reliable
 
 - The maker never returns a picture it hasn't **looked at**, so "renders fine but says something false" is caught before it reaches the learner.
-- PNG embed means **what the maker verified is pixel-identical to what the learner sees** — no re-render drift.
-- Unique filenames keep Obsidian's by-filename embed resolution unambiguous.
+- PNG means **what the maker verified is pixel-identical to what the learner sees** — no re-render drift.
+- Unique filenames keep the page's `viz/` route and Obsidian's by-filename embed resolution unambiguous.
 
 > The makers render through the plugin's `bin/render-mermaid` (mermaid-cli, needs `nix profile add nixpkgs#mermaid-cli`) and `bin/render-svg` (`rsvg-convert`). You never render anything yourself — you only brief the maker and embed the filename it returns.
