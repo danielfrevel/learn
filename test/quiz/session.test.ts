@@ -56,3 +56,16 @@ test("cancelAll ends every open tab, second finish is 409, unknown id is 404", a
   assert.equal(finishTab(s, a.id, { rating: 1 }).status, 409);
   assert.equal(finishTab(s, 99, { rating: 1 }).status, 404);
 });
+
+test("public result carries the picked values and note, never for a cancelled answer", () => {
+  const s = createSession();
+  const a = openTab(s, { kind: "quiz", title: "q", view, grade });
+  answerTab(s, a.id, { answers: ["b"], note: " geraten " });
+  const pub = snapshot(s)[0].result!;
+  assert.deepEqual(pub.answers, ["b"]);
+  assert.equal(pub.note, "geraten");
+  const b = openTab(s, { kind: "quiz", title: "q", view, grade });
+  answerTab(s, b.id, { cancel: true });
+  assert.equal(snapshot(s)[1].status, "cancelled");
+  assert.equal(snapshot(s)[1].result, undefined);
+});

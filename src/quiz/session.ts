@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { DisplayOption, QuizInput } from "./grade.ts";
+import { str, type DisplayOption, type QuizInput } from "./grade.ts";
 import { formatResultText, type Outcome, type QuizResult } from "./result.ts";
 
 export type PageView = Pick<QuizInput, "question" | "details" | "multiSelect"> & { options: DisplayOption[] };
@@ -18,7 +18,7 @@ export interface PublicTab {
   view?: PageView;
   bodyHtml?: string;
   image?: string;
-  result?: { outcome: Outcome; correct: string[]; text: string };
+  result?: { outcome: Outcome; correct: string[]; answers: string[]; note?: string; text: string };
   rating?: number;
   feedback?: string;
 }
@@ -32,6 +32,8 @@ interface Tab {
   input: TabInput;
   status: TabStatus;
   result?: QuizResult;
+  picked?: string[];
+  note?: string;
   rating?: number;
   feedback?: string;
   resolve: (o: TabOutcome) => void;
@@ -54,7 +56,9 @@ function publicTab(t: Tab): PublicTab {
   if (t.input.kind === "quiz") {
     base.introHtml = t.input.introHtml;
     base.view = t.input.view;
-    if (t.result) base.result = { outcome: t.result.outcome, correct: correctValues(t.result), text: formatResultText(t.result) };
+    if (t.result && t.result.outcome !== "cancelled") {
+      base.result = { outcome: t.result.outcome, correct: correctValues(t.result), answers: t.picked ?? [], note: t.note, text: formatResultText(t.result) };
+    }
   } else {
     base.bodyHtml = t.input.bodyHtml;
     base.image = t.input.image;
@@ -96,6 +100,8 @@ export function answerTab(s: Session, id: number, sub: Submission | { cancel: tr
     return { status: 200, body: { cancelled: true } };
   }
   t.result = t.input.grade(sub);
+  t.picked = sub.answers;
+  t.note = str(sub.note);
   t.status = "answered";
   emit(s, "update", t);
   return { status: 200, body: publicTab(t).result };

@@ -55,7 +55,6 @@ export function page(token: string): string {
 const token = ${JSON.stringify(token)};
 const base = "/s/" + token;
 const tabs = new Map();
-const pickedOf = new Map();
 let active = 0;
 const math = (el) => window.renderMathInElement?.(el, { delimiters: [
   { left: "$$", right: "$$", display: true }, { left: "$", right: "$", display: false },
@@ -66,6 +65,7 @@ const post = (path, body) => fetch(base + path, { method: "POST", headers: { "co
 
 function activate(id) {
   if (!tabs.has(id)) return;
+  const changed = id !== active;
   active = id;
   const ids = [...tabs.keys()];
   for (const [tid, t] of tabs) t.section.hidden = tid !== id;
@@ -76,13 +76,14 @@ function activate(id) {
   math(title);
   document.getElementById("prev").disabled = ids.indexOf(id) === 0;
   document.getElementById("next").disabled = ids.indexOf(id) === ids.length - 1;
-  window.scrollTo(0, 0);
+  if (changed) window.scrollTo(0, 0);
 }
 const step = (d) => { const ids = [...tabs.keys()]; activate(ids[ids.indexOf(active) + d]); };
 document.getElementById("prev").addEventListener("click", () => step(-1));
 document.getElementById("next").addEventListener("click", () => step(1));
 window.addEventListener("keydown", (e) => {
-  if (["INPUT", "TEXTAREA", "BUTTON"].includes(document.activeElement?.tagName)) return;
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
+  if (["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
   if (e.key === "ArrowLeft") step(-1);
   if (e.key === "ArrowRight") step(1);
 });
@@ -134,6 +135,7 @@ function quizBody(tab, section) {
   const box = el("div", "options");
   const answered = tab.status !== "open";
   const correct = new Set(tab.result?.correct ?? []);
+  const picked = new Set(tab.result?.answers ?? []);
   for (const o of view.options) {
     const dontKnow = o.index === 0;
     const label = el("label", "opt" + (dontKnow ? " dontknow" : ""));
@@ -141,10 +143,12 @@ function quizBody(tab, section) {
     input.type = view.multiSelect && !dontKnow ? "checkbox" : "radio";
     input.name = "answer-" + tab.id; input.value = o.value; input.dataset.dontKnow = dontKnow;
     input.disabled = answered;
+    input.checked = picked.has(o.value);
     const text = el("span", "", dontKnow ? o.label : o.index + ". " + o.label);
     if (o.description) text.append(el("span", "desc", o.description));
     label.append(input, text);
     if (answered && correct.has(o.value)) label.classList.add("correct");
+    else if (answered && picked.has(o.value) && !dontKnow) label.classList.add("wrong");
     box.append(label);
   }
   box.addEventListener("change", (e) => {
@@ -154,7 +158,7 @@ function quizBody(tab, section) {
       if (picked.dataset.dontKnow === "true" || i.dataset.dontKnow === "true" || !view.multiSelect) i.checked = false;
     }
   });
-  const note = el("textarea"); note.placeholder = "Notiz (optional): Begründung oder Unsicherheit"; note.disabled = answered;
+  const note = el("textarea"); note.placeholder = "Notiz (optional): Begründung oder Unsicherheit"; note.disabled = answered; note.value = tab.result?.note ?? "";
   const submit = el("button", "primary", "Antworten"); submit.type = "submit"; submit.disabled = answered;
   const cancel = el("button", "", "Abbrechen"); cancel.type = "button"; cancel.disabled = answered;
   const actions = el("div", "actions"); actions.append(submit, cancel);
@@ -164,17 +168,12 @@ function quizBody(tab, section) {
     const answers = [...box.querySelectorAll("input:checked")].map((i) => i.value);
     if (!answers.length) return;
     submit.disabled = true;
-    pickedOf.set(tab.id, answers);
     const r = await post("/tabs/" + tab.id + "/answer", { answers, note: note.value });
     if (r.status !== 200) submit.disabled = false;
   });
   cancel.addEventListener("click", () => post("/tabs/" + tab.id + "/answer", { cancel: true }));
   section.append(form);
   if (tab.result) {
-    for (const l of box.querySelectorAll("label.opt")) {
-      const i = l.querySelector("input");
-      if (!correct.has(i.value) && pickedOf.get(tab.id)?.includes(i.value)) l.classList.add("wrong");
-    }
     const out = el("div", "result");
     out.append(el("p", "", tab.result.text));
     section.append(out);
