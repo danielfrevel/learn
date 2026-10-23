@@ -53,6 +53,10 @@ while (next < script.length) {
     if (event === "tab" && next < script.length) await runTab(data, script[next++]);
   }
 }
+if (process.env.QUIZ_STAY) {
+  await writeReport();
+  await new Promise(() => {});
+}
+await reader.cancel();
 await writeReport();
-if (!process.env.QUIZ_STAY) process.exit(0);
-await new Promise(() => {});
+process.exit(0);

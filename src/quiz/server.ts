@@ -1,8 +1,9 @@
 import { createInterface } from "node:readline";
 import { DONT_KNOW_VALUE, displayOrder, grade, optionTitle, str, validateInput, type DisplayOption, type QuizInput } from "./grade.ts";
 import { plainMath } from "./plainmath.ts";
-import { askInBrowser, cancelOpenTabs, type Submission } from "./popup.ts";
-import { encodeResult, formatResultText, toResultOption, type QuizResult } from "./result.ts";
+import { askInBrowser, cancelOpenTabs, showInBrowser, type Submission } from "./popup.ts";
+import { encodeResult, encodeShow, formatResultText, formatShowText, toResultOption, type QuizResult, type ShowResult } from "./result.ts";
+import { validateShow } from "./show.ts";
 
 const TOOL = {
   name: "quiz",
@@ -42,6 +43,24 @@ const TOOL = {
       shuffle: { type: "boolean", description: "Default true." },
     },
     required: ["question", "options", "correctAnswer", "explanation"],
+  },
+};
+
+const SHOW_TOOL = {
+  name: "show",
+  description: [
+    "Show a text tab on the lesson page: explanation, derivation, summary or plan. Markdown with LaTeX ($...$, $$...$$).",
+    "Optional `image`: file name of a PNG in viz/ returned by a maker agent.",
+    "The learner rates their understanding 1-5 and may write what would help; decide the next step from that, the note and how deep you already are in the topic.",
+  ].join(" "),
+  inputSchema: {
+    type: "object",
+    properties: {
+      title: { type: "string", description: "Short tab title." },
+      body: { type: "string", description: "Markdown with LaTeX." },
+      image: { type: "string", description: "File name of a PNG or SVG in viz/, no path." },
+    },
+    required: ["title", "body"],
   },
 };
 
@@ -128,6 +147,15 @@ async function runQuiz(args: unknown) {
   return { content: [{ type: "text", text: formatResultText(result) }, { type: "text", text: encodeResult(result) }] };
 }
 
+async function runShow(args: unknown) {
+  const v = validateShow(args);
+  if (!v.ok) return { isError: true, content: [{ type: "text", text: `show: ${v.error}` }] };
+  const outcome = await showInBrowser(v.show);
+  const result: ShowResult = { kind: "show", ...v.show, rating: outcome?.rating, feedback: outcome?.feedback, cancelled: outcome?.cancelled ?? false };
+  const text = outcome ? formatShowText(result) : `Kein Browser verbunden. Zeig diesen Text im Terminal:\n\n${v.show.body}`;
+  return { content: [{ type: "text", text }, { type: "text", text: encodeShow(result) }] };
+}
+
 async function handle(msg: any) {
   if (msg.id !== undefined && msg.method === undefined) {
     pending.get(msg.id)?.(msg);
@@ -154,10 +182,11 @@ async function handle(msg: any) {
     case "ping":
       return reply(id, {});
     case "tools/list":
-      return reply(id, { tools: [TOOL] });
+      return reply(id, { tools: [TOOL, SHOW_TOOL] });
     case "tools/call":
-      if (params?.name !== "quiz") return fail(id, -32602, `unknown tool ${params?.name}`);
-      return reply(id, await runQuiz(params.arguments));
+      if (params?.name === "quiz") return reply(id, await runQuiz(params.arguments));
+      if (params?.name === "show") return reply(id, await runShow(params.arguments));
+      return fail(id, -32602, `unknown tool ${params?.name}`);
     default:
       if (id !== undefined) fail(id, -32601, `method not found: ${method}`);
   }

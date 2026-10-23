@@ -2,11 +2,11 @@ import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { decodeResult } from "../../src/quiz/result.ts";
+import { decodeResult, decodeShow } from "../../src/quiz/result.ts";
 
 const SERVER = fileURLToPath(new URL("../../src/quiz/server.ts", import.meta.url));
 
@@ -219,4 +219,44 @@ test("server exits when stdin closes even with an open event stream", async (t) 
   await s.report();
   assert.equal(await s.end(), 0);
   void pending;
+});
+
+const showArgs = { title: "Grenzwert", body: "Sei $\\epsilon > 0$.\n\n**Idee:** klein.", image: "bild.png" };
+
+test("tools/list exposes show, invalid image is rejected", async (t) => {
+  const s = startServer(() => ({ action: "cancel" }));
+  t.after(s.stop);
+  const list = await s.call("tools/list");
+  assert.deepEqual(list.result.tools.map((x: any) => x.name), ["quiz", "show"]);
+  const res = await s.call("tools/call", { name: "show", arguments: { ...showArgs, image: "../bild.png" } });
+  assert.equal(res.result.isError, true);
+});
+
+test("browser: show tab with image, rating comes back, viz route serves only files in viz/", async (t) => {
+  const viz = mkdtempSync(join(tmpdir(), "viz-"));
+  writeFileSync(join(viz, "bild.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  const s = browserServer(t, [{ finish: { rating: 3, feedback: "ein Bild mehr" } }], { LEARN_VIZ_DIR: viz, QUIZ_VIZ: "bild.png" });
+  const text = resultText(await s.call("tools/call", { name: "show", arguments: showArgs }));
+  assert.equal(text.split("\n<!--")[0], "Verständnis: 3/5\nHilft mir: ein Bild mehr");
+  assert.equal(decodeShow(text)!.title, "Grenzwert");
+  const report = await s.report();
+  assert.equal(report.tabs[0].kind, "show");
+  assert.equal(report.tabs[0].bodyHtml, "<p>Sei $\\epsilon &gt; 0$.</p>\n<p><strong>Idee:</strong> klein.</p>\n");
+  assert.deepEqual(report.viz, [200, 404]);
+});
+
+test("show falls back to the terminal when no browser connects", async (t) => {
+  const s = startServer(() => assert.fail("show must not elicit"), { LEARN_QUIZ_OPENER: "true", LEARN_QUIZ_LOAD_TIMEOUT_MS: "200" });
+  t.after(s.stop);
+  const text = resultText(await s.call("tools/call", { name: "show", arguments: showArgs }));
+  assert.match(text, /^Kein Browser verbunden\. Zeig diesen Text im Terminal:\n\nSei/);
+  assert.equal(decodeShow(text)!.rating, undefined);
+});
+
+test("reopens the page when the browser disconnected between tabs", async (t) => {
+  const s = browserServer(t, [{ finish: { rating: 5 } }]);
+  assert.match(resultText(await s.call("tools/call", { name: "show", arguments: showArgs })), /^Verständnis: 5\/5/);
+  await s.report();
+  assert.match(resultText(await s.call("tools/call", { name: "show", arguments: showArgs })), /^Verständnis: 5\/5/);
+  assert.equal(s.opened(), 2);
 });
